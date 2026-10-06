@@ -1,0 +1,276 @@
+// Biểu đồ SVG nhẹ, vẽ theo token màu (var(--…)). Biểu đồ chỉ tương tác khi có onSel.
+import { createElement as h, ReactNode } from "react";
+import { vn } from "./fmt";
+
+type Sel = (i: number) => void;
+type Any = any;
+
+const TXT = { fill: "var(--text3)", fontSize: "var(--chart-font-size, 10px)", fontFamily: "-apple-system,Roboto,system-ui,sans-serif", fontVariantNumeric: "tabular-nums" };
+const lbl = (x: number, y: number, t: ReactNode, a = "middle", ex: Any = {}) =>
+  h("text", { x, y, textAnchor: a, style: { ...TXT, ...ex } }, t);
+const frame = (W: number, H: number, k: ReactNode[]) =>
+  h("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", style: { display: "block", overflow: "visible" } }, ...k);
+const niceMax = (v: number) => {
+  const p = Math.pow(10, Math.floor(Math.log10(v || 1)));
+  return ([1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((m) => m * p >= v) as number) * p;
+};
+const hit = (x: number, w: number, H: number, i: number, on: Sel) =>
+  h("rect", { x, y: 0, width: w, height: H, onClick: () => on(i), style: { fill: "transparent", cursor: "pointer" } });
+
+function grid(W: number, top: number, bot: number, max: number, n: number, tf: (v: number) => string = vn) {
+  const k: ReactNode[] = [];
+  for (let i = 0; i <= n; i++) {
+    const y = bot - ((bot - top) * i) / n;
+    k.push(h("line", { x1: 0, x2: W - 26, y1: y, y2: y, style: { stroke: "var(--line)", strokeWidth: 1 } }));
+    k.push(lbl(W, y + 3, tf((max * i) / n), "end"));
+  }
+  return k;
+}
+
+export function vbars(vals: number[], labels: string[], o: Any = {}) {
+  const W = o.w || 342, H = o.h || 140, top = 8, bot = H - 18, pw = W - 30, n = vals.length, step = pw / n, bw = Math.max(2, step * (o.fill || 0.64));
+  const max = niceMax(o.cap || Math.max(1, ...vals)), k = grid(W, top, bot, max, o.w && o.w < 200 ? 2 : 3);
+  vals.forEach((v, i) => {
+    const x = i * step + (step - bw) / 2, over = v > max, hh = (Math.min(v, max) / max) * (bot - top), y = bot - hh, dim = o.sel != null && o.sel !== i;
+    k.push(h("rect", { x, y, width: bw, height: Math.max(hh, v > 0 ? 1.5 : 0), rx: Math.min(2, bw / 2), style: { fill: (o.colors && o.colors[i]) || "var(--accent)", opacity: dim ? 0.38 : 1 } }));
+    if (over) {
+      k.push(h("rect", { x: x - 1, y: y + 12, width: bw + 2, height: 3, style: { fill: "var(--surface)" } }));
+      k.push(lbl(x + bw / 2 + 2, y - 4, vn(v), "start", { fill: "var(--text2)", fontWeight: 600 }));
+    }
+    if (labels[i]) k.push(lbl(x + bw / 2, H - 4, labels[i]));
+  });
+  if (o.onSel) vals.forEach((_, i) => k.push(hit(i * step, step, H, i, o.onSel)));
+  return frame(W, H, k);
+}
+
+// Đồng hồ 24 giờ: 00 ở trên, 06 bên phải, 12 ở dưới, 18 bên trái.
+// Mỗi múi có góc bằng nhau; chiều cao thanh biểu diễn số lượt nghe.
+export function listeningClock(vals: number[], o: { sel?: number; onSel?: Sel; compact?: boolean }) {
+  const size = 320, center = 160, inner = 62, outer = 150;
+  const hours = Array.from({ length: 24 }, (_, i) => Math.max(0, Number(vals[i]) || 0));
+  const max = Math.max(1, ...hours);
+  const point = (radius: number, degrees: number) => {
+    const angle = (degrees - 90) * Math.PI / 180;
+    return [center + radius * Math.cos(angle), center + radius * Math.sin(angle)];
+  };
+  const sector = (hour: number, radius: number) => {
+    const start = hour * 15 + 0.7, end = (hour + 1) * 15 - 0.7;
+    const a = point(inner, start), b = point(radius, start), c = point(radius, end), d = point(inner, end);
+    return `M ${a} L ${b} A ${radius} ${radius} 0 0 1 ${c} L ${d} A ${inner} ${inner} 0 0 0 ${a} Z`;
+  };
+  const k: ReactNode[] = [h("title", { key: "title" }, "Đồng hồ nghe nhạc 24 giờ")];
+  hours.forEach((value, hour) => {
+    const selected = hour === o.sel;
+    const label = `${String(hour).padStart(2, "0")}:00–${String((hour + 1) % 24).padStart(2, "0")}:00 · ${vn(value)} lượt`;
+    const interaction = o.onSel ? {
+      role: "button", tabIndex: 0, "aria-label": label, "aria-pressed": selected,
+      "data-hour": hour, className: "listening-hour", style: { cursor: "pointer" },
+      onClick: () => o.onSel!(hour),
+      onKeyDown: (event: Any) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); o.onSel!(hour); }
+        if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+          event.preventDefault();
+          const next = (hour + (event.key === "ArrowRight" ? 1 : 23)) % 24;
+          o.onSel!(next);
+          event.currentTarget.parentElement.querySelector(`[data-hour="${next}"]`)?.focus();
+        }
+      },
+    } : {};
+    k.push(h("g", { key: hour, ...interaction },
+      h("title", null, label),
+      h("path", { d: sector(hour, outer), className: "clock-track", fill: "var(--surface2)", stroke: selected ? "var(--accent)" : "none", strokeWidth: 1 }),
+      value > 0 && h("path", { d: sector(hour, inner + (value / max) * (outer - inner)), fill: "var(--accent)", opacity: selected ? 1 : 0.55 }),
+    ));
+    const a = point(inner - (hour % 6 === 0 ? 13 : 8), hour * 15), b = point(inner - 4, hour * 15);
+    k.push(h("line", { key: `tick-${hour}`, x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: "var(--text3)", strokeWidth: hour % 6 === 0 ? 1.6 : 1, strokeLinecap: "round" }));
+  });
+  [0, 6, 12, 18].forEach(hour => {
+    const [x, y] = point(34, hour * 15);
+    k.push(h("text", { key: `label-${hour}`, x, y, textAnchor: "middle", dominantBaseline: "central", style: { ...TXT, fill: "var(--text2)", fontSize: `var(--clock-font-size, ${o.compact ? 18 : 12}px)` } }, String(hour).padStart(2, "0")));
+  });
+  return h("svg", { viewBox: `0 0 ${size} ${size}`, width: "100%", role: "group", "aria-label": "Đồng hồ nghe nhạc 24 giờ", style: { display: "block" } }, ...k);
+}
+
+export function lineChart(series: Any[], labels: string[], o: Any = {}) {
+  const W = o.w || 342, H = o.h || 140, top = 10, bot = H - 18, pw = W - 34, n = labels.length;
+  const max = o.exactMax ?? niceMax(o.max || Math.max(1, ...series.flatMap((s) => s.vals)));
+  const X = (i: number) => 2 + (i * pw) / Math.max(1, n - 1), Y = (v: number) => bot - (v / max) * (bot - top);
+  const k = o.ticks ? o.ticks.flatMap((v:number) => [
+    h("line",{x1:0,x2:W-26,y1:Y(v),y2:Y(v),style:{stroke:"var(--line)",strokeWidth:1}}),
+    lbl(W,Y(v)+3,o.tf ? o.tf(v) : vn(v),"end"),
+  ]) : grid(W, top, bot, max, 3, o.tf);
+  if (o.sel != null) k.push(h("line", { x1: X(o.sel), x2: X(o.sel), y1: top - 4, y2: bot, style: { stroke: "var(--text3)", strokeDasharray: "3 3" } }));
+  series.forEach((s) => {
+    const pts = s.vals.map((v: number, i: number) => `${X(i)},${Y(v)}`).join(" ");
+    if (s.area) k.push(h("polygon", { points: `${X(0)},${bot} ${pts} ${X(n - 1)},${bot}`, style: { fill: s.color, opacity: 0.14 } }));
+    k.push(h("polyline", { points: pts, style: { fill: "none", stroke: s.color, strokeWidth: s.w || 2, strokeLinejoin: "round", strokeLinecap: "round" } }));
+    (s.dots || []).forEach((i: number) => k.push(h("circle", { cx: X(i), cy: Y(s.vals[i]), r: 3, style: { fill: "var(--surface)", stroke: s.color, strokeWidth: 1.5 } })));
+    if (o.sel != null) k.push(h("circle", { cx: X(o.sel), cy: Y(s.vals[o.sel]), r: 4.5, style: { fill: s.color, stroke: "var(--surface)", strokeWidth: 2 } }));
+  });
+  labels.forEach((l, i) => { if (l) k.push(lbl(X(i), H - 4, l)); });
+  if (o.onSel) {
+    const st = pw / Math.max(1, n - 1);
+    labels.forEach((_, i) => k.push(hit(X(i) - st / 2, st, H, i, o.onSel)));
+  }
+  return frame(W, H, k);
+}
+
+export function rankLine(vals: (number | null)[], labels: string[], o: Any = {}) {
+  const W = 342, H = 150, top = 12, bot = H - 18, pw = W - 34, n = vals.length, mx = Math.max(4, niceMax(Math.max(...vals.filter((v): v is number => v != null))));
+  const X = (i: number) => 2 + (i * pw) / Math.max(1, n - 1), Y = (r: number) => top + ((r - 1) / (mx - 1)) * (bot - top);
+  const k: ReactNode[] = [];
+  [1, Math.round(mx / 2), mx].forEach((r) => {
+    k.push(h("line", { x1: 0, x2: W - 26, y1: Y(r), y2: Y(r), style: { stroke: "var(--line)" } }));
+    k.push(lbl(W, Y(r) + 3, "#" + r, "end"));
+  });
+  if (o.sel != null) k.push(h("line", { x1: X(o.sel), x2: X(o.sel), y1: top - 4, y2: bot, style: { stroke: "var(--text3)", strokeDasharray: "3 3" } }));
+  let points: string[] = [];
+  const flush = () => {
+    if (points.length > 1) k.push(h("polyline", { points: points.join(" "), style: { fill: "none", stroke: o.color || "var(--accent)", strokeWidth: 2, strokeLinejoin: "round" } }));
+    points = [];
+  };
+  vals.forEach((v, i) => {
+    if (v == null) { flush(); return; }
+    points.push(`${X(i)},${Y(v)}`);
+    k.push(h("circle", { cx: X(i), cy: Y(v), r: i === o.sel ? 4.5 : 2.2, style: { fill: o.color || "var(--accent)", stroke: i === o.sel ? "var(--surface)" : "none", strokeWidth: 2 } }));
+  });
+  flush();
+  labels.forEach((l, i) => { if (l) k.push(lbl(X(i), H - 4, l)); });
+  if (o.onSel) {
+    const st = pw / Math.max(1, n - 1);
+    vals.forEach((_, i) => k.push(hit(X(i) - st / 2, st, H, i, o.onSel)));
+  }
+  return frame(W, H, k);
+}
+
+export function bump(series: Any[], labels: string[], options: { maxRank?: number; height?: number; width?: number; labelEvery?: number; fullLabels?: boolean; labelWidth?: number } = {}) {
+  const lines = (name: string) => {
+    const result: string[] = []; let line = '';
+    for (const word of name.split(' ')) {
+      if (line && line.length + word.length > 40) { result.push(line); line = ''; }
+      line += (line ? ' ' : '') + word;
+    }
+    return [...result, line];
+  };
+  const N = options.maxRank || 10, n = labels.length;
+  const rowHeight = options.fullLabels ? Math.max(30, ...series.map(s => lines(s.name).length * 14 + 6)) : 0;
+  const labelWidth = options.labelWidth ?? (options.fullLabels ? 360 : options.width ? 180 : 112);
+  const W = options.width || 342, H = Math.max(options.height || 250, rowHeight * N + 40), L = 4, R = W - labelWidth, top = 10, bot = H - 20;
+  const X = (i: number) => L + (i * (R - L)) / Math.max(1, n - 1), Y = (r: number) => top + ((Math.min(r, N + 1) - 1) / N) * (bot - top);
+  const k: ReactNode[] = [];
+  for (let r = 1; r <= N; r++) if (!options.labelEvery || r === 1 || r % options.labelEvery === 0) k.push(h("line", { x1: L, x2: R, y1: Y(r), y2: Y(r), style: { stroke: "var(--line)" } }));
+  series.slice().reverse().forEach((s) => {
+    let points: string[] = [];
+    const flush = () => {
+      if (points.length > 1) k.push(h("polyline", { points: points.join(" "), style: { fill: "none", stroke: s.color, strokeWidth: 2, strokeLinejoin: "round" } }));
+      points = [];
+    };
+    s.ranks.forEach((r: number | null, i: number) => {
+      if (r == null || r > N) { flush(); return; }
+      points.push(`${X(i)},${Y(r)}`);
+      k.push(h("circle", { cx: X(i), cy: Y(r), r: 2.4, style: { fill: s.color } }, h("title", null, `${s.name} · ${labels[i]} · #${r}`)));
+    });
+    flush();
+    const lr = s.ranks[n - 1];
+    if (lr != null && lr <= N && (!options.labelEvery || lr === 1 || lr % options.labelEvery === 0)) {
+      if (options.fullLabels) {
+        const nameX=R+8+String(lr).length*9+8;
+        k.push(h("text", {x:R+8,y:Y(lr)+4,textAnchor:"start",style:{...TXT,fill:"var(--text2)",fontSize:16,fontWeight:400}},
+          h("tspan",{style:{fill:"var(--text3)",fontWeight:400}},`${lr}  `),
+          ...lines(s.name).map((line,i)=>h("tspan",{x:nameX,dy:i?14:0,style:{fontWeight:700}},line))));
+      }
+      else k.push(lbl(R + 8, Y(lr) + 3.5, lr + "  " + (s.name.length > 15 ? s.name.slice(0, 14) + "…" : s.name), "start", { fill: "var(--text2)" }));
+    }
+  });
+  const tick = Math.max(1, Math.ceil(n / (options.width ? 12 : 6)));
+  labels.forEach((l, i) => { if ((i % tick === 0 && i < n - Math.max(1, tick / 2)) || i === n - 1) k.push(lbl(X(i), H - 4, l)); });
+  return frame(W, H, k);
+}
+
+export function area(years: number[], series: Any[], o: Any = {}) {
+  const W = o.w || 342, H = o.h || 160, top = 8, bot = H - 18, pw = W - 30, n = years.length;
+  const tot = years.map((_, i) => series.reduce((a, s) => a + s.vals[i], 0)), max = niceMax(Math.max(...tot));
+  const X = (i: number) => (i * pw) / Math.max(1, n - 1), Y = (v: number) => bot - (v / max) * (bot - top);
+  const k = grid(W, top, bot, max, 2), cum = years.map(() => 0);
+  series.forEach((s) => {
+    const lo = cum.slice(), hi = cum.map((c, i) => c + s.vals[i]);
+    k.push(h("polygon", { points: hi.map((v, i) => `${X(i)},${Y(v)}`).concat(lo.map((v, i) => `${X(i)},${Y(v)}`).reverse()).join(" "), style: { fill: s.color } }));
+    hi.forEach((v, i) => { cum[i] = v; });
+  });
+  if (o.sel != null) k.push(h("line", { x1: X(o.sel), x2: X(o.sel), y1: top - 4, y2: bot, style: { stroke: "var(--text)", strokeWidth: 1.5 } }));
+  years.forEach((y, i) => { if (y % 10 === 0) k.push(lbl(X(i), H - 4, String(y))); });
+  if (o.onSel) {
+    const st = pw / Math.max(1, n - 1);
+    years.forEach((_, i) => k.push(hit(X(i) - st / 2, st, H, i, o.onSel)));
+  }
+  return frame(W, H, k);
+}
+
+// Cột nhóm 7 ngày: trung bình cùng thứ · tuần trước · tuần này.
+export function grouped(days: Any[], o: Any = {}) {
+  const W = 342, H = 150, top = 18, bot = H - 20, pw = W - 30, step = pw / 7, bw = 10, cols = ["var(--c2)", "var(--text3)", "var(--accent)"];
+  const vals = days.filter((d) => d.v).flatMap((d) => d.v);
+  const max = niceMax(Math.max(1, ...vals)), k = grid(W, top, bot, max, 3);
+  days.forEach((d, i) => {
+    const cx = i * step + step / 2, dim = o.sel != null && o.sel !== i;
+    if (d.v) d.v.forEach((v: number | null, j: number) => {
+      if (v == null) return;
+      const hh = (v / max) * (bot - top), x = cx - 16 + j * 11;
+      k.push(h("rect", { x, y: bot - hh, width: bw, height: hh, rx: 2, style: { fill: cols[j], opacity: dim ? 0.38 : 1 } }));
+      if (i === o.today && j === 2) k.push(lbl(x + bw / 2, Math.max(12, bot - hh - 5), String(v), "middle", { fill: cols[j], fontWeight: 700 }));
+    });
+    else k.push(h("rect", { x: cx - 10, y: bot - 2, width: 20, height: 2, rx: 1, style: { fill: "var(--line)" } }));
+    k.push(lbl(cx, H - 4, d.l, "middle", o.sel === i ? { fill: "var(--text)", fontWeight: 700 } : {}));
+  });
+  if (o.onSel) days.forEach((_, i) => k.push(hit(i * step, step, H, i, o.onSel)));
+  return frame(W, H, k);
+}
+
+export function spark(vals: number[], o: Any = {}) {
+  if (!vals.length) return null;
+  const w = o.w || 52, hh = o.h || 18, inv = o.inv !== false, mn = Math.min(...vals), mx = Math.max(...vals), r = mx - mn || 1, c = o.color || "var(--text2)";
+  const P = vals.map((v, i) => [(i * (w - 4)) / Math.max(1, vals.length - 1) + 2, (inv ? (v - mn) / r : 1 - (v - mn) / r) * (hh - 4) + 2]);
+  const last = P[P.length - 1];
+  return h("svg", { width: o.full ? "100%" : w, height: hh, viewBox: `0 0 ${w} ${hh}`, preserveAspectRatio: "none", style: { display: "block", overflow: "visible" } },
+    h("polyline", { points: P.map((p) => p.join(",")).join(" "), style: { fill: "none", stroke: c, strokeWidth: o.sw || 1.5, strokeLinejoin: "round", strokeLinecap: "round", vectorEffect: "non-scaling-stroke" } }),
+    h("circle", { cx: last[0], cy: last[1], r: 2, style: { fill: c } }));
+}
+
+// Sparkline hạng có khoảng trống (tháng không có hạng = null).
+export function sparkGap(vals: (number | null)[], o: Any = {}) {
+  if (o.trimLeading) vals = vals.slice(Math.max(0, vals.findIndex(v => v != null)));
+  const w = o.w || 52, hh = o.h || 18, nn = vals.filter((v) => v != null) as number[];
+  if (!nn.length) return null;
+  const mn = Math.min(...nn), mx = Math.max(...nn), r = mx - mn || 1, c = o.color || "var(--text2)";
+  const X = (k: number) => (k * (w - 4)) / Math.max(1, vals.length - 1) + 2, Y = (v: number) => ((v - mn) / r) * (hh - 4) + 2;
+  const segs: number[][][] = [];
+  let cur: number[][] = [];
+  vals.forEach((v, k) => {
+    if (v == null) { if (cur.length) segs.push(cur); cur = []; }
+    else cur.push([X(k), Y(v)]);
+  });
+  if (cur.length) segs.push(cur);
+  let lk = vals.length - 1;
+  while (lk > 0 && vals[lk] == null) lk--;
+  return h("svg", { width: o.full ? "100%" : w, height: hh, preserveAspectRatio: o.full ? "none" : undefined, viewBox: `0 0 ${w} ${hh}`, style: { display: "block", overflow: "visible" } },
+    ...segs.map((sg) => sg.length > 1
+      ? h("polyline", { points: sg.map((q) => q.join(",")).join(" "), style: { fill: "none", stroke: c, strokeWidth: 1.5, vectorEffect: "non-scaling-stroke", strokeLinejoin: "round", strokeLinecap: "round" } })
+      : h("circle", { cx: sg[0][0], cy: sg[0][1], r: 1.2, style: { fill: c } })),
+    h("circle", { cx: X(lk), cy: Y(vals[lk] as number), r: 2, style: { fill: c } }));
+}
+
+export const bar = (pct: number, color = "var(--accent)", mt = 5) =>
+  h("div", { style: { height: 4, borderRadius: 2, background: "var(--surface2)", marginTop: mt, overflow: "hidden" } },
+    h("div", { style: { width: Math.max(0, Math.min(100, pct)) + "%", height: "100%", borderRadius: 2, background: color } }));
+
+// Thay đổi hạng: số dương = lên hạng, "new" = mới vào.
+export type Chg = number | "new";
+const chgCol = (c: Chg) => (c === "new" ? "var(--new)" : c > 0 ? "var(--up)" : c < 0 ? "var(--down)" : "var(--text3)");
+export const chgTxt = (c: Chg) => (c === "new" ? "mới vào" : c > 0 ? "▲" + c : c < 0 ? "▼" + -c : "giữ hạng");
+export function chgEl(c: Chg) {
+  const t = c === "new" ? "MỚI" : c > 0 ? "▲" + c : c < 0 ? "▼" + -c : "–";
+  return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.15, minWidth: 26 } },
+    h("span", { style: { color: chgCol(c), fontSize: `var(--type-caption, ${c === "new" ? 9 : 11}px)`, fontWeight: 700, fontVariantNumeric: "tabular-nums" } }, t));
+}
+export const chgInline = (c: Chg) =>
+  h("div", { style: { fontSize: 12, fontWeight: 700, color: chgCol(c) } }, c === "new" ? "MỚI" : c > 0 ? "▲" + c : c < 0 ? "▼" + -c : "–");
