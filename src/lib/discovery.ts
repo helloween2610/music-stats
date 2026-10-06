@@ -271,6 +271,26 @@ export async function loadSimilarTracks(id: string, signal: AbortSignal): Promis
   return data.tracks;
 }
 
+
+export type SimilarAlbum = { title: string; artist: string; url: string; match: number; image?: string; scrobbles?: number; listeners?: number };
+export async function loadSimilarAlbums(artist: string, title: string, signal?: AbortSignal): Promise<SimilarAlbum[]> {
+  const params = new URLSearchParams({ artist, album: title });
+  const key = 'discovery:similar-albums:v1:' + params, saved = discoveryCache.get(key);
+  if (saved && Date.now() - saved.at < 86400 * 1000) return saved.data;
+  const data = await discoveryGet('/similar-albums?' + params, signal);
+  if (!Array.isArray(data.albums) || !data.albums.every((r: SimilarAlbum) => {
+    try {
+      const url = new URL(r.url);
+      return typeof r.title === 'string' && typeof r.artist === 'string' && Number.isFinite(r.match)
+        && [r.scrobbles, r.listeners].every(n => n == null || Number.isSafeInteger(n) && n >= 0)
+        && (r.image == null || (() => { try { const image = new URL(r.image); return image.protocol === 'https:' && ['lastfm.freetls.fastly.net', 'userserve-ak.last.fm'].includes(image.hostname) && !image.username && !image.password && !image.port; } catch { return false; } })())
+        && url.protocol === 'https:' && ['last.fm', 'www.last.fm'].includes(url.hostname) && !url.username && !url.password && !url.port;
+    } catch { return false; }
+  })) throw new DiscoveryError('Chưa tải được album tương tự.');
+  discoveryCache.set(key, data.albums);
+  return data.albums;
+}
+
 export type AlbumCatalogTrack={id:string;title:string;artist:string;disc:number;trackNumber:number;duration_s?:number;releaseDate?:string};
 export type AlbumCatalog={tracks:AlbumCatalogTrack[];source:string;sourceUrl:string};
 export async function loadAlbumTracks(artist:string,title:string,releaseId?:string,signal?:AbortSignal):Promise<AlbumCatalog|null> {

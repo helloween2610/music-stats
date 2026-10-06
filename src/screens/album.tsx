@@ -1,8 +1,8 @@
 import { LastfmTrackMetrics } from '@/components/lastfm-track-metrics';
 import { ShortcutTarget, albumShortcut, artistShortcut } from '@/components/shortcuts';
 import { useEffect, useState } from 'react';
-import { loadAlbumTracks, vnDate, type AlbumCatalog } from '@/lib/discovery';
-import { mergeAlbumTracks, unreleasedTrack } from '@/lib/albums';
+import { DiscoveryError, loadAlbumTracks, loadSimilarAlbums, vnDate, type AlbumCatalog, type SimilarAlbum } from '@/lib/discovery';
+import { albumId, mergeAlbumTracks, unreleasedTrack } from '@/lib/albums';
 import { durationLabel } from '@/lib/metadata';
 import { ini } from '@/lib/fmt';
 import { Ctx, VM } from '@/vm';
@@ -10,6 +10,37 @@ import { AppleMusicArtwork } from '@/components/apple-music-artwork';
 import { compactPlays, MusicMetadata, SongTitle } from '@/components/music-metadata';
 import { EmptyState, SampleChip, Thumb } from '@/components/ui';
 import { SongListRow } from './main';
+
+
+function SimilarAlbumsSection({ album, c }: { album: any; c: Ctx }) {
+  const [albums, setAlbums] = useState<SimilarAlbum[] | null>(null), [error, setError] = useState<DiscoveryError | null>(null), [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!album?.artist || !album?.title) return;
+    const controller = new AbortController();
+    setError(null); setAlbums(null);
+    loadSimilarAlbums(album.artist, album.title, controller.signal)
+      .then(result => { if (!controller.signal.aborted) setAlbums(result); })
+      .catch(e => { if (!controller.signal.aborted) setError(e instanceof DiscoveryError ? e : new DiscoveryError('Chưa tải được album tương tự.')); });
+    return () => controller.abort();
+  }, [album?.artist, album?.title, attempt]);
+  const openLocal = (r: SimilarAlbum) => c.go('album', albumId(r.artist, r.title));
+  return <section className="similar-section" aria-label="Album tương tự">
+    <div className="sec">Album tương tự <span className="t3" style={{fontSize:'var(--type-caption, 11px)',fontWeight:400}}>· Last.fm</span></div>
+    <div className="card">
+      {error ? <div className="pad discovery-error" role="status"><p>{error.message}</p><button type="button" className="discovery-action" onClick={() => setAttempt(n => n + 1)}>Thử lại</button></div>
+        : !albums ? <p className="pad t3" role="status">Đang tìm album tương tự…</p>
+        : !albums.length ? <p className="pad t2">Last.fm chưa có gợi ý album tương tự.</p>
+        : albums.slice(0, 8).map(r => <AppleMusicArtwork key={r.url} className="row song-row similar-track" query={{kind:'album',artist:r.artist,title:r.title}} notify={c.ptoast} lazy>
+          <div className="song-artwork"><Thumb ini={ini(r.title)} img={r.image} size={52}/></div>
+          <div className="song-copy">
+            <div className="sub13 ell tone-gray">{r.artist}</div>
+            <div className="song-title-line"><button type="button" className="album-name-link acc ell" onClick={() => openLocal(r)}>{r.title}</button></div>
+          </div>
+          <div className="song-metrics num"><strong>{Math.round(r.match * 100)}%</strong><span className="t3">match</span></div>
+        </AppleMusicArtwork>)}
+    </div>
+  </section>;
+}
 
 export function AlbumScreen({vm,c}:{vm:VM;c:Ctx}) {
   const album=vm.album;
@@ -76,5 +107,6 @@ export function AlbumScreen({vm,c}:{vm:VM;c:Ctx}) {
     <div className="card album-info" aria-label="Thông tin album">{album.info.map((r:any)=><div className="album-info-row" key={r.k}>
       <span className="t2">{r.k}</span><span className={`num tone-${r.tone || 'gray'}`}>{r.v}</span>
     </div>)}</div>
+    <SimilarAlbumsSection album={album} c={c}/>
   </>;
 }
