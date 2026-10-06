@@ -92,6 +92,9 @@ body.browser-desktop {
   .screen-top100 .web-song-grid .rising-song-chart { height: 22px; }
   .screen-top100 .web-song-grid .rising-song-chart > svg { height: 18px; }
   .screen-top100 .web-song-grid .song-rank-progress { font-size: 8px; line-height: 11px; }
+
+  .screen-top100 .web-song-grid .song-row.rank-trend-up { background: linear-gradient(90deg, rgba(12, 58, 37, .52), rgba(12, 58, 37, .22)); }
+  .screen-top100 .web-song-grid .song-row.rank-trend-down { background: linear-gradient(90deg, rgba(72, 18, 25, .52), rgba(72, 18, 25, .22)); }
   .screen-top100 .web-song-grid .song-copy > .sub13,
   .screen-top100 .web-song-grid .song-copy > .song-title-line,
   .screen-top100 .web-song-grid .song-copy > .song-album-line,

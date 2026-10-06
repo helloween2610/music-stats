@@ -748,8 +748,12 @@ function mapServer(c: Ctx, D: Any) {
     o.songRankMonthChips = songRankPeriodChips(p, currentAsOf, (value) => c.set(() => ({ songRankAsOf: value })));
     o.songFilterNote = p.filter === "Mới vào" ? "Từ hạng ngoài Top 100 ở bản chốt tháng gần nhất lên Top 100 hiện tại." : "";
     o.t100Head = `Hạng hiện tại so với chốt ${per(periods[periods.length - 1])}`;
-    o.top100Rows = H.rows.filter((r: Any) => p.filter === "Tất cả" || (p.filter === "Đang lên" ? (r.rise || 0) > 0 : r.previous > 100 && r.rank <= 100)).map((r: Any) => ({ tid: r.track_id, rank: r.rank, metric: `${vn(r.plays)} lượt`, listening: fmtMin(r.minutes || 0), timeFirst: true, chg: chgEl(r.previous == null ? "new" : r.previous - r.rank), title: r.title, artist: r.artist || "Chưa rõ nghệ sĩ", lv: "lv" + (r.level ?? "–"),
-      peak: r.best ? `Cao nhất #${r.best.rank} · ${per(r.best.period)}` : "Cao nhất –", months: `${r.monthsInTop100 ?? 0} tháng trong top 100`, spark: sparkGap(songRankTimeline(r.history || [], H.asOf || asOf, r.rank).ranks, { w: 54, h: 26, full: true, trimLeading: true, color: songRankColor(r.rank) }), onTap: r.track_id ? toSong(r.track_id) : noop }));
+    o.top100Rows = H.rows.filter((r: Any) => p.filter === "Tất cả" || (p.filter === "Đang lên" ? (r.rise || 0) > 0 : r.previous > 100 && r.rank <= 100)).map((r: Any) => {
+      const delta = r.previous == null ? 0 : r.previous - r.rank;
+      return { tid: r.track_id, rank: r.rank, metric: `${vn(r.plays)} lượt`, listening: fmtMin(r.minutes || 0), timeFirst: true, chg: chgEl(r.previous == null ? "new" : delta), title: r.title, artist: r.artist || "Chưa rõ nghệ sĩ", lv: "lv" + (r.level ?? "–"),
+        rankTrendClass: delta > 0 ? "rank-trend-up" : delta < 0 ? "rank-trend-down" : "",
+        peak: r.best ? `Cao nhất #${r.best.rank} · ${per(r.best.period)}` : "Cao nhất –", months: `${r.monthsInTop100 ?? 0} tháng trong top 100`, spark: sparkGap(songRankTimeline(r.history || [], H.asOf || asOf, r.rank).ranks, { w: 54, h: 26, full: true, trimLeading: true, color: songRankColor(r.rank) }), onTap: r.track_id ? toSong(r.track_id) : noop };
+    });
   }
   if (scr === "artistsAll") {
     const currentAsOf = D.sum?.asOf || asOf;

@@ -190,7 +190,7 @@ export function RecentScreen({vm}:P) {
 }
 
 export const SongListRow = ({ r, right, hideAlbum = false, hideArtist = false }: { r: Any; right?: ReactNode; hideAlbum?:boolean; hideArtist?:boolean }) => (
-  <ShortcutTarget entity={songShortcut(r)}><div className="row song-row" onClick={r.onTap}>
+  <ShortcutTarget entity={songShortcut(r)}><div className={`row song-row ${r.rankTrendClass || ''}`} onClick={r.onTap}>
     <div className="song-artwork"><Thumb ini={r.ini || r.title?.slice(0,2) || '♫'} img={r.img} size={52} /><ArtworkRank rank={r.allTimeRank} change={r.allTimeChange} comparison={r.allTimeComparison} /></div>
     <div className="song-copy">
       {!hideArtist && <MetadataHelp item={{title:'Màu nghệ sĩ',text:r.artist}}><div className={`sub13 ell tone-${r.artistTone || 'gray'}`}>{r.artist}</div></MetadataHelp>}
