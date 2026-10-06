@@ -364,7 +364,10 @@ html, body, #app { overscroll-behavior-y: none; }
 .album-grid { column-gap: 0; }
 .artist-grid > .empty { grid-column: 1/-1; }
 .artist-tile { display: flex; flex-direction: column; align-items: center; width: 100%; min-width: 0; padding: 0; border: 0; background: none; font: inherit; color: var(--text); text-align: center; cursor: pointer; }
-.artist-tile > .thumb { width: 100% !important; height: auto !important; max-width: 172px; aspect-ratio: 1; box-shadow: 0 8px 28px #0005; font-size: 25px; }
+.artist-avatar-wrap { position:relative; width:100%; max-width:172px; aspect-ratio:1; }
+.artist-avatar-wrap > .thumb { width:100% !important; height:100% !important; max-width:none; aspect-ratio:1; box-shadow:0 8px 28px #0005; font-size:25px; }
+.artist-avatar-wrap > .artwork-rank { left:50%; bottom:7px; transform:translateX(-50%); }
+.artist-avatar-wrap > .artwork-rank.with-change { left:50%; transform:translateX(-50%); justify-content:center; }
 .artist-name { margin-top: 9px; font-size: 14px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
 .artist-name .flag-hot, .artist-name .flag-cold { display: inline; }
 .tile-rank { color: var(--text3); font-weight: 400; }
@@ -482,6 +485,9 @@ html, body, #app { overscroll-behavior-y: none; }
 .artist-summary-metrics .metric-value { font-size: 22px; font-weight: 700; line-height: 24px; }
 .artist-summary-metrics .metric-duration { font-size: 15px; }
 .artist-summary-metrics .metric-label { font-size: var(--type-caption, 11px); margin-top: 4px; }
+.song-artist-line { display:flex; align-items:baseline; gap:4px; min-width:0; }
+.song-artist-line > .ell { min-width:0; }
+.song-list-number { flex:none; color:var(--text3); font-size:var(--type-caption, 11px); font-weight:600; }
 .song-copy > .sub13 { line-height: 16px; }
 .song-copy > .song-title-line { line-height: 20px; }
 .song-copy > .song-album-line { line-height: 14px; }
@@ -688,7 +694,7 @@ button.album-tile { padding:0; border:0; background:none; color:var(--text); fon
 .ranking-tabs .seg, .ranking-month-tabs .seg { overflow-x: auto; scrollbar-width: none; }
 .ranking-tabs .seg::-webkit-scrollbar, .ranking-month-tabs .seg::-webkit-scrollbar { display: none; }
 .ranking-tabs .seg-item { flex: 1 0 auto; padding: 0 8px; white-space: nowrap; font-size: 13px; }
-.ranking-month-tabs { margin: 6px 16px 0; }
+.ranking-month-tabs { margin: 6px 16px 12px; }
 .ranking-month-tabs .seg { padding: 0; border-bottom: 0; background: transparent; gap: 6px; }
 .ranking-month-tabs .seg-item { flex: 0 0 auto; height: 30px; padding: 0 12px; border-radius: 999px; background: var(--surface); color: var(--text2); white-space: nowrap; font-size: var(--type-caption, 12px); }
 .ranking-month-tabs .seg-item.on { color: var(--ink); background: var(--accent); box-shadow: none; font-weight: 700; }

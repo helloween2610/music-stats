@@ -18,7 +18,7 @@ const links: { screen: Screen; id?: string; label: string; path: string }[] = [
   {screen:'overviewThisYear', label:'This Year', path:'M4 4v16h16M8 16v-4m4 4V8m4 8V5'},
   {screen:'overviewAllTime', label:'All Time', path:'M4 4v16h16M8 16v-4m4 4V8m4 8V5'},
   {screen:'top100', label:'Top 100 Song', path:'M9 18V5l10-2v13M9 18a3 2 0 1 1-3-2c2 0 3 1 3 2Zm10-2a3 2 0 1 1-3-2c2 0 3 1 3 2ZM9 9l10-2'},
-  {screen:'periodTop', id:'albums~all', label:'Top 32 Album', path:'M4 3h16v18H4ZM16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM12 12h.01'},
+  {screen:'periodTop', id:'albums~all', label:'Top 24 Album', path:'M4 3h16v18H4ZM16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM12 12h.01'},
   {screen:'artistsAll', label:'Top 32 Artist', path:'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a8 8 0 0 1 16 0v2'},
   {screen:'releaseYears', label:'Năm phát hành', path:'M4 20h16M6 17v-5m6 5V5m6 12V9'},
   {screen:'releases', label:'Phát hành', path:'M4 5h16v16H4ZM8 3v4m8-4v4M4 11h16m-12 4h3m2 3h3'},

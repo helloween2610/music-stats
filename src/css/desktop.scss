@@ -25,7 +25,7 @@ body.browser-desktop {
   button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   .sc.zaui-page { width: calc(100% - var(--web-sidebar)); margin-left: var(--web-sidebar); padding: 100px var(--web-gutter) 40px; }
   .sc > .ranking-tabs { margin-top: -10px; }
-  .sc > .ranking-month-tabs { margin-top: 8px; margin-left: auto; margin-right: auto; }
+  .sc > .ranking-month-tabs { margin-top: 8px; margin-bottom: 12px; margin-left: auto; margin-right: auto; }
   .screen-artistsAll:has(> .artist-grid) { height: 100dvh; overflow-y: hidden; padding-bottom: 0; }
   .sc > :not(.pull-refresh) { max-width: 1420px; margin-left: auto; margin-right: auto; }
   .sc { scrollbar-width: thin; scrollbar-color: #363840 transparent; }
@@ -71,7 +71,7 @@ body.browser-desktop {
   .artist-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 20px 8px; }
   .album-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 20px 0; }
   .album-grid .album-cover .thumb { border-radius: 0; }
-  .artist-tile > .thumb { max-width: 100%; }
+  .artist-avatar-wrap { max-width: 100%; }
   .release-grid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 28px 22px; }
   .playlist-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 18px; }
   .card.pad svg { max-height: 240px; }
@@ -165,8 +165,7 @@ body.browser-desktop {
   .lastfm-metric-icon { width: 11px; height: 11px; }
   .artwork-rank { font-size: 12px; line-height: 18px; }
   .artwork-rank-change { font-size: 8px; }
-  .artwork-rank.with-change { padding: 1px 2px; gap: 1px; line-height: 14px; }
-  .artwork-rank.with-change > span:first-child { font-size: 10px; }
+  .artwork-rank.with-change { padding: 1px 2px; gap: 1px; line-height: 18px; }
   .chips.compact .chip { height: 36px; line-height: 36px; font-size: var(--type-secondary); }
   .period-top-tabs .seg-item, .release-tabs button { font-size: var(--type-body); }
   .playlist-tile { height: auto; min-height: 112px; padding: 12px; gap: 10px; }

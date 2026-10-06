@@ -31,6 +31,7 @@ export const SHOW_TREND_SONG_HISTORY = false;
 
 // Ẩn biểu đồ nhỏ trong danh sách bài hát; giữ dữ liệu để bật lại.
 export const SHOW_SONG_LIST_SPARKLINES = false;
+const ALBUM_ALL_TIME_LIMIT = 24;
 
 export function NowPlayingButton({c,alwaysShow=false}:{c:Ctx;alwaysShow?:boolean}) {
   const [track,setTrack]=useState<NowPlayingTrack|null>(null),[busy,setBusy]=useState(alwaysShow);
@@ -189,11 +190,11 @@ export function RecentScreen({vm}:P) {
     {vm.recent.length ? <RecentSongs rows={vm.recent}/> : <EmptyState title="Chưa có lượt nghe" note=""/>}</>;
 }
 
-export const SongListRow = ({ r, right, hideAlbum = false, hideArtist = false }: { r: Any; right?: ReactNode; hideAlbum?:boolean; hideArtist?:boolean }) => (
+export const SongListRow = ({ r, right, hideAlbum = false, hideArtist = false, showListRank = false }: { r: Any; right?: ReactNode; hideAlbum?:boolean; hideArtist?:boolean; showListRank?:boolean }) => (
   <ShortcutTarget entity={songShortcut(r)}><div className={`row song-row ${r.rankTrendClass || ''}`} onClick={r.onTap}>
     <div className="song-artwork"><Thumb ini={r.ini || r.title?.slice(0,2) || '♫'} img={r.img} size={52} /><ArtworkRank rank={r.allTimeRank} change={r.allTimeChange} comparison={r.allTimeComparison} /></div>
     <div className="song-copy">
-      {!hideArtist && <MetadataHelp item={{title:'Màu nghệ sĩ',text:r.artist}}><div className={`sub13 ell tone-${r.artistTone || 'gray'}`}>{r.artist}</div></MetadataHelp>}
+      {!hideArtist && <MetadataHelp item={{title:'Màu nghệ sĩ',text:r.artist}}><div className={`song-artist-line sub13 ell tone-${r.artistTone || 'gray'}`}>{showListRank && Number.isInteger(r.rank) && r.rank > 0 && <span className="song-list-number num">{r.rank}.</span>}<span className="ell">{r.artist}</span></div></MetadataHelp>}
       <SongTitle title={r.title} tone={r.titleTone} items={r.metadata} trackNumber={r.trackNumber} />
       <div className="song-album-line">
         {!hideAlbum && r.album && (r.goAlbum ? <ShortcutTarget entity={albumShortcut({title:r.album,artist:r.albumArtist || r.artist,onTap:r.goAlbum})}><button type="button" className="song-album ell album-name-link" title={r.album} aria-label={`Mở album: ${r.album}`} onClick={e=>{e.stopPropagation();r.goAlbum();}}>{r.album}</button></ShortcutTarget> : <div className="song-album ell" title={r.album}>{r.album}</div>)}
@@ -226,7 +227,7 @@ export const ArtistListRow = ({ r, timeFirst = false }: { r: Any; timeFirst?: bo
   const swapMetrics = timeFirst ? isPlays(primary) : isPlays(r.small);
   const counts = r.libraryTracks != null && r.listenedTracks != null;
   return <ShortcutTarget entity={artistShortcut(r)}><button type="button" className="artist-tile" onClick={r.onTap}>
-    <Thumb ini={r.ini || r.name?.slice(0,2) || '♫'} img={r.img} round size={136} />
+    <div className="artist-avatar-wrap"><Thumb ini={r.ini || r.name?.slice(0,2) || '♫'} img={r.img} round size={136} /><ArtworkRank rank={r.allTimeRank ?? r.rank} change={r.allTimeChange} comparison={r.allTimeComparison}/></div>
     <div className="artist-title-line"><MetadataHelp item={{title:'Màu nghệ sĩ',text:r.name}}><div className={`artist-name tone-${r.titleTone || 'gray'}`}><span className="tile-rank">{r.rank}.</span> {r.name} <Flags hot={r.hot} cold={r.cold} /></div></MetadataHelp>
     </div>
     {!counts && <MusicMetadata items={r.metadata} hideAdded />}
@@ -247,7 +248,7 @@ export function Top100Screen({ vm, c }: P) {
       <RankFocus c={c} rows={vm.top100Rows} kind="song" />
       <div className="card web-song-grid" style={{ marginTop: 10 }}>
         {vm.top100Rows.slice(0,100).map((r: Any, k: number) => (
-          <RisingRow key={k} r={r} />
+          <RisingRow key={k} r={r} showListRank />
         ))}
       </div>
       </>}
@@ -277,13 +278,15 @@ export function ArtistsAllScreen({ vm, c }: P) {
 }
 
 // Dùng cùng cover và metadata với các danh sách bài hát khác.
-export const RisingRow = ({ r }: { r: Any }) => r.gone ? <SongListRow r={r}/> : (
-  <SongListRow r={r} right={
+export const RisingRow = ({ r, showListRank = false }: { r: Any; showListRank?: boolean }) => r.gone ? <SongListRow r={r} showListRank={showListRank}/> : (
+  <SongListRow r={r} showListRank={showListRank} right={
     <div className={`rising-song-metrics tone-${r.titleTone || 'gray'}`}>
       <SongListeningMetrics plays={r.metric || r.v} listening={r.listening} duration={r.duration_s} metadata={r.metadata} timeFirst={r.timeFirst} inline/>
       <div className="rising-song-chart">{r.spark}</div>
-      {r.risingRank != null ? <div className="song-rank-progress num" aria-label={`Hạng cuối ${r.risingPreviousPeriod}: #${r.risingPreviousRank}; hạng trong tháng này: #${r.risingRank}; tăng ${r.risingPreviousRank-r.risingRank} bậc`}>
-        <strong className="t3">{r.risingPreviousRank}</strong><span className="rank-up" aria-hidden="true">▶</span><strong className="rank-up">{r.risingRank}</strong>
+      {r.hideRankProgress ? <div className="song-rank-progress num is-empty" aria-hidden="true">&nbsp;</div> : r.monthRankCurrent != null ? <div className="song-rank-progress num" aria-label={`Hạng ${r.monthRankPreviousPeriod}: #${r.monthRankPrevious ?? '–'}; hạng ${r.monthRankCurrentPeriod}: #${r.monthRankCurrent}${r.monthRankPrevious ? `; thay đổi ${r.monthRankPrevious-r.monthRankCurrent} bậc` : ''}`}>
+        {r.monthRankPrevious != null && <><strong className="t3">{r.monthRankPrevious}</strong><span className={r.monthRankPrevious-r.monthRankCurrent >= 0 ? "rank-up" : "rank-down"} aria-hidden="true">▶</span></>}<strong className={r.monthRankPrevious == null ? "t3" : r.monthRankPrevious-r.monthRankCurrent >= 0 ? "rank-up" : "rank-down"}>{r.monthRankCurrent}</strong>
+      </div> : r.risingRank != null ? <div className="song-rank-progress num" aria-label={`Hạng cuối ${r.risingPreviousPeriod}: #${r.risingPreviousRank ?? '–'}; hạng trong tháng này: #${r.risingRank}${r.risingPreviousRank ? `; tăng ${r.risingPreviousRank-r.risingRank} bậc` : ''}`}>
+        {r.risingPreviousRank != null && <><strong className="t3">{r.risingPreviousRank}</strong><span className={r.risingPreviousRank-r.risingRank >= 0 ? "rank-up" : "rank-down"} aria-hidden="true">▶</span></>}<strong className={r.risingPreviousRank == null ? "t3" : r.risingPreviousRank-r.risingRank >= 0 ? "rank-up" : "rank-down"}>{r.risingRank}</strong>
       </div> : <SongRankProgress best={r.allTimeBestRank} previous={r.allTimePreviousRank} current={r.allTimeRank} previousPeriod={r.allTimePreviousPeriod}/>} 
     </div>
   } />
@@ -552,7 +555,7 @@ function RankHistoryPanel({ vm }: { vm: VM }) {
 
 export function PeriodTopScreen({ vm, c }: P) {
   if(vm.periodIsAlbums){
-    const limit=vm.periodAllTime ? 32 : listDisplayLimit(vm.periodAllTime,c?.p?.periodListSize);
+    const limit=vm.periodAllTime ? ALBUM_ALL_TIME_LIMIT : listDisplayLimit(vm.periodAllTime,c?.p?.periodListSize);
     return <><div className="ranking-tabs"><SegTabs items={vm.albumSortChips || []}/></div>
       {vm.periodAllTime && !vm.albumIsHistory && <div className="ranking-month-tabs"><SegTabs items={vm.albumRankMonthChips || []}/></div>}
       {vm.albumIsHistory ? <RankHistoryPanel vm={vm}/> : <>
@@ -570,7 +573,7 @@ export function PeriodTopScreen({ vm, c }: P) {
       {!vm.periodRows.length && <EmptyState title="Chưa có kết quả" note={vm.periodEmpty} />}
       {vm.periodRows.slice(0,listDisplayLimit(false,c?.p?.periodListSize)).map((r: Any, k: number) => vm.periodIsArtists
         ? <ArtistListRow key={k} r={r} timeFirst={c.p.periodSort !== "Lượt" && c.p.periodSort !== "Điểm All time"} />
-        : r.risingRank != null ? <RisingRow key={k} r={r}/> : <SongListRow key={k} r={r} />)}
+        : r.risingRank != null ? <RisingRow key={k} r={r} showListRank/> : <SongListRow key={k} r={r} showListRank />)}
     </div>}
     {vm.periodIsArtists && !vm.periodRisingNote && <div className="note">* đang nghe nhiều · !!! top 10 từ 04/2024 nhưng gần đây ít nghe</div>}
     </>}

@@ -38,5 +38,8 @@ export function applyArtworkRanks(view:any, songs:any[] = [], albums:any[] = [],
   for(const row of view.album?.songs || [])song(row,row.tid);
   for(const row of view.artist?.songs || [])song(row,row.tid);
   for(const row of view.playlistLibrary || [])song(row,row.id);
-  for(const row of view.albums || [])row.allTimeRank=albumRanks[row.ak];
+  for(const row of view.albums || []){
+    row.allTimeRank=albumRanks[row.ak];
+    if(!Number.isInteger(row.allTimeChange)){ row.allTimeChange=undefined; row.allTimeComparison=undefined; }
+  }
 }
