@@ -1,5 +1,6 @@
 const params = new URLSearchParams(window.location.search);
-const desktopMode = params.has("desktop") || window.location.pathname.endsWith("/web.html");
+const path = window.location.pathname.replace(/\/$/, "");
+const desktopMode = params.has("desktop") || path.endsWith("/web") || path.endsWith("/web.html");
 
 async function start() {
   if (params.has("embed") || desktopMode) {
