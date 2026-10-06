@@ -241,6 +241,7 @@ export function Top100Screen({ vm, c }: P) {
     <>
       <SampleChip show={vm.sampleChip} text={vm.chipText} />
       <div className="ranking-tabs"><SegTabs items={vm.songViewTabs} /></div>
+      {!vm.songIsHistory && <div className="ranking-month-tabs"><SegTabs items={vm.songRankMonthChips || []} /></div>}
       {vm.songIsHistory ? <RankHistoryPanel vm={vm} /> : <>
       {vm.songFilterNote && <div className="note">{vm.songFilterNote}</div>}
       <RankFocus c={c} rows={vm.top100Rows} kind="song" />
@@ -265,7 +266,7 @@ export function ArtistsAllScreen({ vm, c }: P) {
       <RankFocus c={c} rows={vm.artistRows} kind="artist" />
       {!vm.artistRows.length && <EmptyState title="Chưa có nghệ sĩ phù hợp" note=""/>}
       <div className="artist-grid" style={{ marginTop: 12 }}>
-        {vm.artistRows.slice(0,24).map((r: Any, k: number) => (
+        {vm.artistRows.slice(0,32).map((r: Any, k: number) => (
           <ArtistListRow key={k} r={r} timeFirst />
         ))}
       </div>
@@ -554,7 +555,6 @@ export function PeriodTopScreen({ vm, c }: P) {
     const limit=vm.periodAllTime ? 32 : listDisplayLimit(vm.periodAllTime,c?.p?.periodListSize);
     return <><div className="ranking-tabs"><SegTabs items={vm.albumSortChips || []}/></div>
       {vm.periodAllTime && !vm.albumIsHistory && <div className="ranking-month-tabs"><SegTabs items={vm.albumRankMonthChips || []}/></div>}
-      {vm.albumRankPeriodNote && !vm.albumIsHistory && <div className="note">{vm.albumRankPeriodNote}</div>}
       {vm.albumIsHistory ? <RankHistoryPanel vm={vm}/> : <>
       {vm.albums.length ? <AlbumGrid albums={vm.albums.slice(0,limit)} showRank hideArtist/> : <EmptyState title="Chưa có album phù hợp" note=""/>}
       </>}

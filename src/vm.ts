@@ -111,11 +111,22 @@ const artistRankPeriodChips = (p: UI, currentAsOf: string, set: (v: string) => v
   const selected = artistRankPeriodValue(p.artistRankAsOf, currentAsOf) || currentAsOf;
   return artistRankPeriodItems(currentAsOf).map(item => ({ label: item.label, active: selected.slice(0, 7) === item.activeDate.slice(0, 7) && (!/^\d{4}$/.test(item.label) || selected.slice(0, 4) === item.activeDate.slice(0, 4)), onTap: () => set(item.value) }));
 };
-const artistRankPath = (sort: string, asOf = "") => `/artists/alltime?sort=${ASORT[sort] || "hours"}&limit=24${asOf ? `&asOf=${asOf}` : ""}`;
+const artistRankPath = (sort: string, asOf = "") => `/artists/alltime?sort=${ASORT[sort] || "hours"}&limit=32${asOf ? `&asOf=${asOf}` : ""}`;
 const prefetchArtistRankPeriods = (sort: string, currentAsOf: string) => {
   artistRankPeriodItems(currentAsOf)
     .filter(item => item.value && item.value < currentAsOf)
     .forEach(item => fetchJson(artistRankPath(sort, item.value), true));
+};
+const songRankAsOf = (p: UI, currentAsOf: string) => artistRankPeriodValue(p.songRankAsOf, currentAsOf) || currentAsOf;
+const songRankPeriodChips = (p: UI, currentAsOf: string, set: (v: string) => void) => {
+  const selected = artistRankPeriodValue(p.songRankAsOf, currentAsOf) || currentAsOf;
+  return artistRankPeriodItems(currentAsOf).map(item => ({ label: item.label, active: selected.slice(0, 7) === item.activeDate.slice(0, 7) && (!/^\d{4}$/.test(item.label) || selected.slice(0, 4) === item.activeDate.slice(0, 4)), onTap: () => set(item.value) }));
+};
+const songRankPath = (asOf = "") => `/history/songs?top=100&months=36${asOf ? `&asOf=${asOf}` : ""}`;
+const prefetchSongRankPeriods = (currentAsOf: string) => {
+  artistRankPeriodItems(currentAsOf)
+    .filter(item => item.value && item.value < currentAsOf)
+    .forEach(item => fetchJson(songRankPath(item.value), true));
 };
 const albumRankAsOf = (p: UI, currentAsOf: string) => artistRankPeriodValue(p.albumRankAsOf, currentAsOf) || currentAsOf;
 const albumRankPeriodChips = (p: UI, currentAsOf: string, set: (v: string) => void) => {
@@ -387,8 +398,20 @@ function serverGet(c: Ctx) {
     if (pull("msongs", "/charts/songs?window=month&limit=5") && D.sum && !(D.msongs.rows || []).length)
       pull("mprev", `/charts/songs?window=month&asOf=${addDays(D.sum.asOf.slice(0, 8) + "01", -1)}&limit=5`);
   }
-  if (scr === "top100") pull("hist", "/history/songs?top=100&months=36");
-  if (scr === "artistsAll" || (scr === "periodTop" && topPeriod(c.id).kind === "albums" && topPeriod(c.id).scope === "all")) pull("sum", "/summary", true);
+  if (scr === "top100" || scr === "artistsAll" || (scr === "periodTop" && topPeriod(c.id).kind === "albums" && topPeriod(c.id).scope === "all")) pull("sum", "/summary", true);
+  if (scr === "top100") {
+    const currentAsOf = D.sum?.asOf || vnToday();
+    const songAsOf = songRankAsOf(p, currentAsOf);
+    const historicalAsOf = songAsOf < currentAsOf ? songAsOf : "";
+    const e = fetchJson(songRankPath(historicalAsOf), !!historicalAsOf);
+    if (e.data != null) {
+      D.hist = e.data;
+      dataTimes.push(e.dataAt);
+      if (e.st !== "ok") stale = true;
+    } else if (e.st === "err") { st = "err"; failed = true; if (e.code) codes.push(e.code); }
+    else if (st !== "err") st = "loading";
+    prefetchSongRankPeriods(currentAsOf);
+  }
   if (scr === "rising" || scr === "trend") {
     if (pull("hist", "/history/songs?top=100&months=36")) {
       const date = D.hist.asOf || vnToday();
@@ -721,6 +744,8 @@ function mapServer(c: Ctx, D: Any) {
   }
   if (scr === "top100") {
     const H = D.hist, periods = H.periods || [];
+    const currentAsOf = D.sum?.asOf || H.asOf || asOf;
+    o.songRankMonthChips = songRankPeriodChips(p, currentAsOf, (value) => c.set(() => ({ songRankAsOf: value })));
     o.songFilterNote = p.filter === "Mới vào" ? "Từ hạng ngoài Top 100 ở bản chốt tháng gần nhất lên Top 100 hiện tại." : "";
     o.t100Head = `Hạng hiện tại so với chốt ${per(periods[periods.length - 1])}`;
     o.top100Rows = H.rows.filter((r: Any) => p.filter === "Tất cả" || (p.filter === "Đang lên" ? (r.rise || 0) > 0 : r.previous > 100 && r.rank <= 100)).map((r: Any) => ({ tid: r.track_id, rank: r.rank, metric: `${vn(r.plays)} lượt`, listening: fmtMin(r.minutes || 0), timeFirst: true, chg: chgEl(r.previous == null ? "new" : r.previous - r.rank), title: r.title, artist: r.artist || "Chưa rõ nghệ sĩ", lv: "lv" + (r.level ?? "–"),
@@ -743,9 +768,9 @@ function mapServer(c: Ctx, D: Any) {
       const ranks=new Map<string,number>((D.previousArtists?.rows || []).filter((r:Any)=>!pts || r.points!=null).map((r:Any,k:number)=>[r.artist,pts?r.pointsRank ?? r.rank:p.sort === "Lượt"?k+1:r.rank]));
       const newcomers=p.artistFilter === "Mới vào";
       o.artistRows=o.artistRows.map((r:Any)=>({...r,change:ranks.has(r.an)?ranks.get(r.an)!-r.rank:0}))
-        .filter((r:Any)=>newcomers ? r.rank<=24 && !ranks.has(r.an) : r.change>0)
+        .filter((r:Any)=>newcomers ? r.rank<=32 && !ranks.has(r.an) : r.change>0)
         .map((r:Any)=>({...r,chg:chgEl(newcomers ? "new" : r.change)}));
-      o.artistFilterNote=newcomers ? `Mới vào Top 24 theo ${p.sort.toLowerCase()} so với ${prev.label}.` : `Tăng hạng Top 24 theo ${p.sort.toLowerCase()} so với ${prev.label}.`;
+      o.artistFilterNote=newcomers ? `Mới vào Top 32 theo ${p.sort.toLowerCase()} so với ${prev.label}.` : `Tăng hạng Top 32 theo ${p.sort.toLowerCase()} so với ${prev.label}.`;
     }
   }
   if (scr === "trend") {
@@ -1174,7 +1199,7 @@ export function buildVM(c: Ctx): VM {
   const { st, D, codes, stale, failed, dataAt } = serverGet(c);
   const p = c.p;
   // Cache raw server data, not React elements or callbacks tied to old UI state.
-  const viewKey = "view:" + JSON.stringify([c.screen, c.id, p.sort, p.scope, p.artistFilter, p.artistRankAsOf,p.albumSort,p.albumFilter,p.albumRankAsOf,
+  const viewKey = "view:" + JSON.stringify([c.screen, c.id, p.sort, p.scope, p.filter, p.songView, p.songRankAsOf, p.artistFilter, p.artistRankAsOf,p.albumSort,p.albumFilter,p.albumRankAsOf,
     "Tháng", p.qd, p.findK, p.fqd, p.sheet, ...(c.screen === "periodTop" && p.periodFilter === "Mới thêm" ? ["new"] : [])]);
   const previous = lastGood.get(viewKey);
   const label = (at: number, error: boolean) =>
