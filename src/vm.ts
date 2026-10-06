@@ -11,7 +11,7 @@ import { applyArtworkRanks } from './lib/artwork-ranks';
 import { CAN_WRITE, DATA_SOURCE, DESKTOP_WEB } from "@/config";
 import { fetchJson, invalidate, postJson, lastGood } from "@/lib/api";
 import {
-  area, bar, bump, chgEl, chgInline, chgTxt, grouped, lineChart, listeningClock, rankLine, spark, sparkGap, vbars, Chg,
+  area, artistMapChart, bar, bump, chgEl, chgInline, chgTxt, grouped, lineChart, listeningCalendar, listeningClock, rankLine, spark, sparkGap, tagStream, vbars, Chg,
 } from "@/lib/charts";
 import {
   addDays, ago, cap1, d1, dm, dmy, dow, DOWF, DOWS, fmtH, fmtMin, fmtLocal, fmtWhen, fold, hhmm, hhmmdm, ini, mlab,
@@ -181,7 +181,7 @@ export function charts(c: Ctx, song: Any, art: Any, cd: Any = SAMPLE_CD) {
     const jm = Math.min(sel("month", mv.length - 1), mv.length - 1), jh = Math.min(sel("hours", O.months.length - 1), O.months.length - 1);
     ch.month = vbars(mv, (off ? ["Trước"] : []).concat(O.months.map((m: Any, k: number) => (k % 4 === 0 && !(off && k === 0) ? m.l : ""))), { ...wide, cap: O.cap, colors: off ? ["var(--text3)"] : [], sel: jm, onSel: on("month") });
     rd.month = off && jm === 0 ? `Trước khi theo dõi · ${vn(O.before)} lượt` : `T${O.months[jm - off].l} · ${vn(O.months[jm - off].plays || 0)} lượt`;
-    ch.hours = lineChart([{ vals: O.months.map((m: Any) => m.hours || 0), color: "var(--accent)", area: true, dots: O.dots || [] }], O.months.map((m: Any, k: number) => (k % 5 === 0 ? m.l : "")), { ...wide, ...(DESKTOP_WEB ? {exactMax:110,ticks:[0,50,100,110]} : {}), max: O.hmax, tf: (v: number) => Math.round(v) + "h", sel: jh, onSel: on("hours") });
+    ch.hours = lineChart([{ vals: O.months.map((m: Any) => m.hours || 0), color: "var(--accent)", area: true, dots: O.dots || [] }], O.months.map((m: Any, k: number) => (k % 5 === 0 ? m.l : "")), { ...wide, tf: (v: number) => Math.round(v) + "h", sel: jh, onSel: on("hours") });
     rd.hours = `T${O.months[jh].l} · ${fmtH(O.months[jh].hours || 0)}`;
     if ((p.scope === "Tháng" || p.scope === "Tháng trước") && O.day) {
       const jd = Math.min(sel("day", O.dayDef ?? O.day.length - 1), O.day.length - 1), jw = sel("wd", 5), jr = sel("hr", O.hr.indexOf(Math.max(...O.hr)));
@@ -447,14 +447,13 @@ function serverGet(c: Ctx) {
       if (e.st !== "ok") stale = true;
     } else if (e.st === "err") { st = "err"; failed = true; if (e.code) codes.push(e.code); }
     else if (st !== "err") st = "loading";
-    if (historicalAsOf) {
-      const cur = fetchJson(artistRankPath(p.sort), false);
-      if (cur.data != null) {
-        D.currentArtistRanks = cur.data;
-        dataTimes.push(cur.dataAt);
-        if (cur.st !== "ok") stale = true;
-      }
-    }
+    const cur = fetchJson(artistRankPath(p.sort), false);
+    if (cur.data != null) {
+      D.currentArtistRanks = cur.data;
+      dataTimes.push(cur.dataAt);
+      if (cur.st !== "ok") stale = true;
+    } else if (historicalAsOf && cur.st === "err") { st = "err"; failed = true; if (cur.code) codes.push(cur.code); }
+    else if (historicalAsOf && st !== "err") st = "loading";
     prefetchArtistRankPeriods(p.sort, currentAsOf);
     pull("atc", `/charts/artists?window=at&limit=50${historicalAsOf ? `&asOf=${historicalAsOf}` : ""}`, true);
   }
@@ -533,7 +532,7 @@ function serverGet(c: Ctx) {
       }
     }
   }
-  if (scr === "releaseYears") pull("ry", "/release-years");
+  if (scr === "releaseYears") { pull("ry", "/release-years"); pull("aat", "/artists/alltime?sort=hours&limit=5000", true); }
   if (scr === "overview") {
     if (p.scope === "All time") {
       pull("hist", "/history/songs?top=100&months=18");
@@ -545,6 +544,12 @@ function serverGet(c: Ctx) {
       const a = D.sum.asOf;
       const overviewScope = ({ "All time": "all", "Từ 04/2024": "ft0424", "Năm": a.slice(0, 4), "Tháng": a.slice(0, 7), "Tháng trước": prevYm(a) } as Any)[p.scope];
       pull("ov", "/overview?scope=" + overviewScope);
+      if (/^\d{4}$/.test(overviewScope)) {
+        for (let month = 1; month <= 12; month++) {
+          const mm = pad(month);
+          pull("calendarMonth" + mm, `/overview?scope=${overviewScope}-${mm}&asOf=${a}&limit=1`, true);
+        }
+      }
       if (overviewScope === "all" || /^\d{4}(-\d{2})?$/.test(overviewScope)) {
         const riseWindow = allTimeRiseWindow(overviewScope, a);
         pull("monthSummaryAdditions", `/new-additions?scope=${overviewScope === "all" ? a.slice(0, 4) : overviewScope}&asOf=${a}&limit=5000&inLibrary=1&v=3`, true);
@@ -699,6 +704,71 @@ function releaseYearData(rows: Any[]) {
     return { years, series, tot, def: Math.max(0, tot.indexOf(Math.max(...tot))) };
 }
 
+
+function listeningCalendarDays(rows: Any[], scope: string, asOf: string) {
+  const year = Number(/^\d{4}$/.test(scope) ? scope : asOf.slice(0, 4));
+  if (!Number.isFinite(year)) return [];
+  const start = Date.UTC(year, 0, 1), end = Date.UTC(year + 1, 0, 1);
+  const byDate = new Map<string, number>();
+  (rows || []).forEach((x: Any, index: number) => {
+    const raw = x?.date ?? x?.k ?? x?.day;
+    let date = typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(0, 10) : '';
+    if (!date && Number.isFinite(Number(raw))) {
+      const n = Number(raw);
+      const offset = n >= 1 && n <= 31 && rows.length <= 31 ? n - 1 : n;
+      date = new Date(start + offset * 86400000).toISOString().slice(0, 10);
+    } else if (!date && rows.length > index) date = new Date(start + index * 86400000).toISOString().slice(0, 10);
+    const value = Number(x?.plays ?? x?.n ?? x?.value ?? x?.v ?? 0) || 0;
+    if (date.slice(0,4) === String(year)) byDate.set(date, value);
+  });
+  const days: Any[] = [];
+  for (let t = start; t < end; t += 86400000) {
+    const d = new Date(t), date = d.toISOString().slice(0, 10), jan = new Date(start);
+    const weekday = d.getUTCDay();
+    const week = Math.floor((Math.floor((t - start) / 86400000) + jan.getUTCDay()) / 7);
+    days.push({ date, label: date.slice(8,10) + '/' + date.slice(5,7), month: d.getUTCMonth(), week, weekday, value: byDate.get(date) || 0 });
+  }
+  return days;
+}
+
+function yearCalendarRows(D: Any, year: string) {
+  const rows: Any[] = [];
+  let loaded = false;
+  for (let month = 1; month <= 12; month++) {
+    const mm = pad(month), data = D['calendarMonth' + mm];
+    if (!data?.byDay) continue;
+    loaded = true;
+    (data.byDay || []).forEach((x: Any, index: number) => {
+      const raw = x?.date ?? x?.k ?? x?.day;
+      const day = typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw) ? Number(raw.slice(8, 10)) : Number.isFinite(Number(raw)) ? (Number(raw) >= 1 ? Number(raw) : Number(raw) + 1) : index + 1;
+      if (!Number.isFinite(day) || day < 1) return;
+      rows.push({ date: `${year}-${mm}-${pad(day)}`, plays: Number(x?.plays ?? x?.n ?? x?.value ?? x?.v ?? 0) || 0 });
+    });
+  }
+  return { rows, loaded };
+}
+
+const ARTIST_COUNTRIES: Record<string, {code:string; name:string}> = {
+  'mono': {code:'JP', name:'Japan'}, 'aephanemer': {code:'FR', name:'France'}, 'wintersun': {code:'FI', name:'Finland'}, 'kalmah': {code:'FI', name:'Finland'}, 'nightwish': {code:'FI', name:'Finland'}, 'ensiferum': {code:'FI', name:'Finland'}, 'insomnium': {code:'FI', name:'Finland'}, 'omnium gatherum': {code:'FI', name:'Finland'},
+  'no clear mind': {code:'GR', name:'Greece'}, 'i am no hero': {code:'GR', name:'Greece'}, 'tyr': {code:'FO', name:'Faroe Islands'}, 'týr': {code:'FO', name:'Faroe Islands'}, 'epica': {code:'NL', name:'Netherlands'}, 'shylmagoghnar': {code:'NL', name:'Netherlands'},
+  'scorpions': {code:'DE', name:'Germany'}, 'helloween': {code:'DE', name:'Germany'}, 'dark tranquillity': {code:'SE', name:'Sweden'}, 'amon amarth': {code:'SE', name:'Sweden'}, 'in flames': {code:'SE', name:'Sweden'}, 'therion': {code:'SE', name:'Sweden'}, 'soilwork': {code:'SE', name:'Sweden'}, 'after earth': {code:'SE', name:'Sweden'},
+  'metallica': {code:'US', name:'United States'}, 'buckethead': {code:'US', name:'United States'}, 'aether realm': {code:'US', name:'United States'}, 'æther realm': {code:'US', name:'United States'}, 'muse': {code:'GB', name:'United Kingdom'},
+  'nguyễn hà': {code:'VN', name:'Vietnam'}, 'le cat trong ly': {code:'VN', name:'Vietnam'}, 'lê cát trọng lý': {code:'VN', name:'Vietnam'}, 'ludovico einaudi': {code:'IT', name:'Italy'}, 'atavistia': {code:'CA', name:'Canada'}, 'april rain': {code:'RU', name:'Russia'}
+};
+function artistCountryData(rows: Any[]) {
+  const map = new Map<string, Any>();
+  (rows || []).forEach((r: Any) => {
+    const name = r.artist || r.name;
+    const c = ARTIST_COUNTRIES[fold(name || '')];
+    if (!c) return;
+    const cur = map.get(c.code) || { ...c, value: 0, hours: 0, topArtist: '' };
+    cur.value += 1; cur.hours += r.hours || 0;
+    if (!cur.topArtist || (r.rank || Infinity) < (cur.topRank || Infinity)) { cur.topArtist = name; cur.topRank = r.rank; }
+    map.set(c.code, cur);
+  });
+  return [...map.values()].sort((a, b) => b.value - a.value || b.hours - a.hours).slice(0, 24);
+}
+
 function mapServer(c: Ctx, D: Any) {
   const p = c.p, scr = c.screen, toSong = (id: string) => () => c.go("song", id), toArtist = (n: string) => () => c.go("artist", n), noop = () => {};
   const o: Any = { sampleChip: false }, asOf: string = (D.sum && D.sum.asOf) || vnToday();
@@ -801,12 +871,12 @@ function mapServer(c: Ctx, D: Any) {
       if(best)artistBadgeBest.set(row.artist,{rank:best.rank,period:per(best.period)});
     }
     const artistRankValue = (r: Any, k: number) => pts ? r.pointsRank ?? r.rank : p.sort === "Lượt" ? k + 1 : r.rank;
-    const currentArtistRanks = new Map<string,number>((D.currentArtistRanks?.rows || D.aat.rows || []).filter((r:Any)=>!pts || r.points!=null).map((r:Any,k:number)=>[r.artist,artistRankValue(r,k)]));
+    const currentArtistRanks = new Map<string,number>((D.currentArtistRanks?.rows || []).filter((r:Any)=>!pts || r.points!=null).map((r:Any,k:number)=>[r.artist,artistRankValue(r,k)]));
     o.artistRows = D.aat.rows.filter((r: Any) => !pts || r.points != null).map((r: Any, k: number) => {
       const rank = artistRankValue(r,k);
-      const badgeRank = currentArtistRanks.get(r.artist) ?? rank;
+      const badgeRank = currentArtistRanks.get(r.artist);
       const badgeBest = artistBadgeBest.get(r.artist);
-      const badgeChange = badgeBest && badgeBest.rank !== badgeRank ? badgeBest.rank - badgeRank : undefined;
+      const badgeChange = badgeRank != null && badgeBest && badgeBest.rank !== badgeRank ? badgeBest.rank - badgeRank : undefined;
       return { an: r.artist, rank, allTimeRank: badgeRank, allTimeChange: badgeChange, allTimeComparison: badgeChange == null ? undefined : badgeBest?.period, name: r.artist, ini: ini(r.artist), ...flOf(r.flag),
       listenedTracks: nmap[r.artist], lastPlayed: shortDate(r.lastPlayed),
       sub: (nmap[r.artist] != null ? vn(nmap[r.artist]) + " bài · " : "") + "nghe lần cuối " + shortDate(r.lastPlayed),
@@ -1022,6 +1092,8 @@ function mapServer(c: Ctx, D: Any) {
     const releaseArea=releaseYearData(D.ry?.rows || []);
     o.areaLegend=releaseArea.series.map(s=>({name:s.name,color:s.color}));
     Object.assign(o,charts(c,null,null,{area:releaseArea}));
+    o.ch.tags = releaseArea.years.length ? tagStream(releaseArea.years, releaseArea.series, { ...(DESKTOP_WEB ? {w:1100,h:270} : {}) }) : null;
+    o.ch.artistMap = artistMapChart(artistCountryData(D.aat?.rows || []), { ...(DESKTOP_WEB ? {w:1100,h:360} : {}) });
   }
   if (scr === "overview") {
     const O = D.ov, T = O.totals || {}, all = p.scope === "All time", before = all && O.beforeTracking ? O.beforeTracking.plays : null;
@@ -1093,6 +1165,12 @@ function mapServer(c: Ctx, D: Any) {
     const releaseArea = releaseYearData(D.ry?.rows || []);
     o.areaLegend = releaseArea.series.map((s) => ({ name: s.name, color: s.color }));
     Object.assign(o, charts(c, null, null, { ov, area: releaseArea }));
+    if (p.scope === "Năm") {
+      const calendarSource = yearCalendarRows(D, scope);
+      const calendarDays = listeningCalendarDays(calendarSource.loaded ? calendarSource.rows : O.byDay || [], scope, asOf);
+      o.ch.calendar = calendarDays.length ? listeningCalendar(calendarDays, { ...(DESKTOP_WEB ? {w:1100,cell:14,gap:3} : {}), year: scope }) : null;
+      o.rd.calendar = calendarSource.loaded ? `${scope} · ${vn(calendarDays.reduce((a: number, d: Any) => a + (d.value || 0), 0))} lượt` : "Đang tải dữ liệu ngày…";
+    }
     if (!months.length) o.rd = { ...o.rd, month: "Chưa có lượt nghe trong kỳ này", hours: "Chưa có lượt nghe trong kỳ này" };
     o.topArtistsTitle = `Top ${DESKTOP_WEB ? 12 : 6} Artists ${compactLabel}`;
     o.topAlbumsTitle = `Top 6 Albums ${compactLabel}`;
@@ -1379,7 +1457,6 @@ function enrichMetadata(o: Any, D: Any, c: Ctx) {
   if (t) {
     const extra = [
       t.album && { k: 'Album', v: canonicalAlbum(t.album_artist || t.artist || '',t.album), onTap: o.song.goAlbum },
-      t.year && { k: 'Năm phát hành', v: String(t.year), tone: releaseTone(t.year) },
       t.releaseDate && { k: 'Ngày phát hành', v: dmy(t.releaseDate), tone: releaseTone(Number(t.releaseDate.slice(0, 4))) },
       t.duration_s && { k: 'Độ dài', v: durationLabel(t.duration_s), tone: durationTone(t.duration_s, t.allHours || 0) },
       t.genre && { k: 'Thể loại', v: t.genre },

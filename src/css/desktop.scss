@@ -75,30 +75,38 @@ body.browser-desktop {
   .release-grid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 28px 22px; }
   .playlist-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 18px; }
   .card.pad svg { max-height: 240px; }
-  .screen-top100 > .song-list, .screen-periodTop > .song-list, .screen-recent > .card { max-width: 1050px; }
+  .screen-top100 > .song-list, .screen-recent > .card { max-width: 1050px; }
+  .screen-periodTop > .song-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); max-width:1420px; column-gap:0; }
   .screen-top100 .row, .screen-periodTop .row, .screen-recent .row { padding: 12px 18px; }
   .screen-top100 .song-copy, .screen-periodTop .song-copy, .screen-recent .song-copy { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 2px 20px; align-items: center; }
   .screen-top100 .song-copy > .song-title-line, .screen-periodTop .song-copy > .song-title-line, .screen-recent .song-copy > .song-title-line { grid-column: 1; }
   .screen-top100 > .web-song-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); max-width: 1420px; column-gap: 0; }
   .screen-recent > .card { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); max-width: 1420px; column-gap: 18px; }
-  .screen-top100 .web-song-grid .song-copy, .screen-recent .song-copy { display: block; }
-  .screen-top100 .web-song-grid .row, .screen-recent > .card .row { min-width: 0; border-bottom: 1px solid var(--line); }
-  .screen-top100 .web-song-grid .song-row { grid-template-columns: 50px minmax(0,1fr) 56px; justify-content: start; gap: 6px; padding-left: 10px; padding-right: 10px; }
-  .screen-top100 .web-song-grid .song-artwork > .thumb { width: 50px !important; height: 50px !important; }
+  .screen-top100 .web-song-grid .song-copy, .screen-periodTop > .song-list .song-copy, .screen-recent .song-copy { display: block; }
+  .screen-top100 .web-song-grid .row, .screen-periodTop > .song-list .row, .screen-recent > .card .row { min-width: 0; border-bottom: 1px solid var(--line); }
+  .screen-top100 .web-song-grid .song-row, .screen-periodTop > .song-list .song-row { grid-template-columns: 50px minmax(0,1fr) 56px; justify-content: start; gap: 6px; padding-left: 10px; padding-right: 10px; }
+  .screen-periodTop > .song-list .song-row { grid-template-columns: 50px minmax(0,220px) 54px; padding-right: 10px; column-gap: 6px; }
+  .screen-periodTop > .song-list .song-metrics, .screen-periodTop > .song-list .rising-song-metrics { justify-self:start; align-items:flex-start; text-align:left; }
+  .screen-top100 .web-song-grid .song-artwork > .thumb, .screen-periodTop > .song-list .song-artwork > .thumb { width: 50px !important; height: 50px !important; }
   .screen-top100 .web-song-grid .rising-song-metrics { width: 56px; }
-  .screen-top100 .web-song-grid .rising-song-metrics .song-metrics { gap: 4px; }
-  .screen-top100 .web-song-grid .rising-song-metrics .song-metrics strong { font-size: calc(var(--type-caption) * .9); }
-  .screen-top100 .web-song-grid .rising-song-metrics .song-metrics > span { font-size: calc(var(--type-caption) * .9); }
-  .screen-top100 .web-song-grid .rising-song-chart { height: 22px; }
-  .screen-top100 .web-song-grid .rising-song-chart > svg { height: 18px; }
-  .screen-top100 .web-song-grid .song-rank-progress { font-size: 8px; line-height: 11px; }
+  .screen-periodTop > .song-list .rising-song-metrics { width: 54px; }
+  .screen-top100 .web-song-grid .rising-song-metrics .song-metrics, .screen-periodTop > .song-list .rising-song-metrics .song-metrics { gap: 4px; }
+  .screen-top100 .web-song-grid .rising-song-metrics .song-metrics strong, .screen-periodTop > .song-list .rising-song-metrics .song-metrics strong { font-size: calc(var(--type-caption) * .9); }
+  .screen-top100 .web-song-grid .rising-song-metrics .song-metrics > span, .screen-periodTop > .song-list .rising-song-metrics .song-metrics > span { font-size: calc(var(--type-caption) * .9); }
+  .screen-top100 .web-song-grid .rising-song-chart, .screen-periodTop > .song-list .rising-song-chart { height: 22px; }
+  .screen-top100 .web-song-grid .rising-song-chart > svg, .screen-periodTop > .song-list .rising-song-chart > svg { height: 18px; }
+  .screen-top100 .web-song-grid .song-rank-progress, .screen-periodTop > .song-list .song-rank-progress { font-size: 8px; line-height: 11px; }
 
   .screen-top100 .web-song-grid .song-row.rank-trend-up { background: linear-gradient(90deg, rgba(12, 58, 37, .52), rgba(12, 58, 37, .22)); }
   .screen-top100 .web-song-grid .song-row.rank-trend-down { background: linear-gradient(90deg, rgba(72, 18, 25, .52), rgba(72, 18, 25, .22)); }
   .screen-top100 .web-song-grid .song-copy > .sub13,
   .screen-top100 .web-song-grid .song-copy > .song-title-line,
   .screen-top100 .web-song-grid .song-copy > .song-album-line,
-  .screen-top100 .web-song-grid .song-copy > .song-album-line .music-metadata { line-height: 1.25; }
+  .screen-top100 .web-song-grid .song-copy > .song-album-line .music-metadata,
+  .screen-periodTop > .song-list .song-copy > .sub13,
+  .screen-periodTop > .song-list .song-copy > .song-title-line,
+  .screen-periodTop > .song-list .song-copy > .song-album-line,
+  .screen-periodTop > .song-list .song-copy > .song-album-line .music-metadata { line-height: 1.25; }
   .screen-periodTop > .ranking-tabs { margin-bottom: 12px; }
   .screen-playlist > .playlist-song-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); column-gap: 18px; }
   .screen-playlist .playlist-song-list > .row { min-width: 0; padding: 12px 18px; }
@@ -319,6 +327,10 @@ body.browser-desktop {
   .web-genres > div > div:first-child { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: var(--type-caption); }
   .web-genres small { font-size: var(--type-caption); color: var(--text3); }
   .web-area-panel { width: 100%; }
+  .web-release-years-dashboard { display: flex; flex-direction: column; gap: 18px; }
+  .web-release-chart-grid { display: grid; grid-template-columns: minmax(0,1fr); gap: 18px; }
+  .web-release-chart-grid .web-panel { padding: 16px; }
+
   .web-trend-columns { grid-template-columns: minmax(270px,.8fr) minmax(0,2fr); align-items: stretch; }
   .web-trend-columns .rising-artist-groups, .web-trend-columns .rising-song-groups { margin: 0 !important; }
   .web-trend-columns .rising-song-month { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); column-gap: 18px; }
@@ -375,8 +387,8 @@ body.browser-desktop {
   }
   @media (max-width: 720px) {
     .web-trend-columns .rising-song-month, .web-recent-scroll > .card { grid-template-columns: 1fr; }
-    .screen-top100 > .web-song-grid, .screen-recent > .card, .screen-playlist > .playlist-song-list { grid-template-columns: 1fr; }
-    .screen-top100 .web-song-grid .song-row { grid-template-columns: 52px minmax(0,1fr) 88px; }
+    .screen-top100 > .web-song-grid, .screen-periodTop > .song-list, .screen-recent > .card, .screen-playlist > .playlist-song-list { grid-template-columns: 1fr; }
+    .screen-top100 .web-song-grid .song-row, .screen-periodTop > .song-list .song-row { grid-template-columns: 52px minmax(0,1fr) 88px; }
     .web-two-columns, .web-today-charts, .detail-chart-grid { grid-template-columns: 1fr; }
     .web-today-charts > .web-panel:first-child, .web-today-charts > .web-panel:last-child { grid-row: auto; grid-column: auto; }
     .web-highlights, .web-overview-long .web-highlights { grid-template-columns: repeat(2,minmax(0,1fr)); }

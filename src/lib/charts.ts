@@ -206,6 +206,68 @@ export function area(years: number[], series: Any[], o: Any = {}) {
   return frame(W, H, k);
 }
 
+
+export function listeningCalendar(days: Any[], o: Any = {}) {
+  const W = o.w || 1100, cell = o.cell || 16, gap = o.gap || 3, top = 34, left = 28;
+  const monthNames = o.monthNames || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const max = Math.max(1, ...days.map((d: Any) => d.value || 0));
+  const monthX: Record<number, number> = {};
+  const color = (v: number) => v <= 0 ? 'var(--surface2)' : v / max > .75 ? '#b9c5ff' : v / max > .5 ? '#6d73ff' : v / max > .25 ? '#4b42d8' : '#27245f';
+  const k: ReactNode[] = [];
+  days.forEach((d: Any) => {
+    const x = left + d.week * (cell + gap), y = top + d.weekday * (cell + gap);
+    if (monthX[d.month] == null) monthX[d.month] = x;
+    k.push(h('rect', { x, y, width: cell, height: cell, rx: 2, style: { fill: color(d.value || 0), stroke: 'rgba(0,0,0,.28)', strokeWidth: 1 } }, h('title', null, `${d.label} · ${vn(d.value || 0)} lượt`)));
+  });
+  Object.keys(monthX).forEach(m => k.push(lbl(monthX[Number(m)], 20, monthNames[Number(m)], 'start', { fill: 'var(--text2)', fontSize: 13, fontWeight: 700 })));
+  k.push(lbl(10, top + 3.5 * (cell + gap), o.year || '', 'middle', { transform: `rotate(-90 10 ${top + 3.5 * (cell + gap)})`, fill: 'var(--text2)', fontSize: 13, fontWeight: 700 }));
+  return frame(W, top + 7 * (cell + gap) + 6, k);
+}
+
+export function tagStream(years: number[], series: Any[], o: Any = {}) {
+  const W = o.w || 1100, H = o.h || 250, top = 22, bot = H - 34, pw = W - 36, n = years.length;
+  const shown = series.filter((s: Any) => s.vals.some((v: number) => v > 0)).slice(0, o.limit || 7);
+  const totals = years.map((_, i) => shown.reduce((a: number, s: Any) => a + (s.vals[i] || 0), 0));
+  const max = Math.max(1, ...totals);
+  const X = (i: number) => 18 + (i * pw) / Math.max(1, n - 1), Y = (v: number) => (top + bot) / 2 - (v / max) * ((bot - top) * .82);
+  const k: ReactNode[] = [h('line', { x1: 0, x2: W, y1: top - 12, y2: top - 12, style: { stroke: 'var(--line)' } })];
+  const offsets = years.map((_, i) => -totals[i] / 2);
+  shown.forEach((s: Any) => {
+    const lo = offsets.slice(), hi = offsets.map((v, i) => v + (s.vals[i] || 0));
+    k.push(h('polygon', { points: hi.map((v, i) => `${X(i)},${Y(v)}`).concat(lo.map((v, i) => `${X(i)},${Y(v)}`).reverse()).join(' '), style: { fill: s.color, opacity: .9, stroke: 'rgba(0,0,0,.35)', strokeWidth: 1 } }));
+    let best = 0;
+    s.vals.forEach((v: number, i: number) => { if (v > (s.vals[best] || 0)) best = i; offsets[i] = hi[i]; });
+    if ((s.vals[best] || 0) > 0) k.push(lbl(X(best), Y((lo[best] + hi[best]) / 2) + 4, s.name, 'middle', { fill: '#fff', fontSize: 13, fontWeight: 800 }));
+  });
+  const step = Math.max(1, Math.ceil(years.length / 10));
+  years.forEach((y, i) => { if (i % step === 0 || i === years.length - 1) k.push(lbl(X(i), H - 7, String(y), 'middle', { fill: 'var(--text3)', fontSize: 12 })); });
+  return frame(W, H, k);
+}
+
+export function artistMapChart(countries: Any[], o: Any = {}) {
+  const W = o.w || 1100, H = o.h || 360, max = Math.max(1, ...countries.map((c: Any) => c.value || 0));
+  const xy: Record<string, [number, number]> = { US:[230,155], CA:[215,100], BR:[365,230], AR:[345,285], GB:[520,120], IE:[500,122], FR:[535,150], DE:[565,140], NL:[552,132], SE:[590,94], FI:[620,82], NO:[575,78], DK:[570,118], IT:[575,175], GR:[610,190], RU:[720,95], CN:[820,165], JP:[915,170], KR:[885,165], IN:[745,210], VN:[820,225], AU:[910,285], NZ:[995,315], FO:[515,94] };
+  const blobs = [
+    'M145 135 C185 90 270 88 310 130 C275 155 265 205 215 205 C170 200 125 175 145 135Z',
+    'M440 120 C490 70 655 70 690 135 C655 170 590 168 565 210 C505 198 440 170 440 120Z',
+    'M665 120 C760 70 930 92 970 160 C900 190 820 175 760 225 C710 210 650 170 665 120Z',
+    'M790 250 C850 220 960 235 990 292 C925 330 830 325 790 250Z',
+    'M315 205 C365 215 405 260 385 318 C335 303 300 250 315 205Z',
+  ];
+  const k: ReactNode[] = [h('rect', { x: 0, y: 0, width: W, height: H, rx: 16, style: { fill: 'transparent' } })];
+  blobs.forEach((d, i) => k.push(h('path', { d, style: { fill: i === 3 ? '#0d263c' : '#0a2034', stroke: '#06111d', strokeWidth: 1 } })));
+  countries.forEach((c: Any) => {
+    const p = xy[c.code]; if (!p) return;
+    const r = 5 + Math.sqrt((c.value || 0) / max) * 18;
+    k.push(h('circle', { cx: p[0], cy: p[1], r, style: { fill: '#4aa3ff', opacity: .35 } }, h('title', null, `${c.name} · ${vn(c.value || 0)} nghệ sĩ`)));
+    k.push(h('circle', { cx: p[0], cy: p[1], r: Math.max(3, r * .35), style: { fill: '#8fc8ff' } }));
+  });
+  const lead = countries[0];
+  if (lead) k.push(lbl(40, H - 36, `Top country · ${lead.name}`, 'start', { fill: 'var(--text2)', fontSize: 16, fontWeight: 700 }), lbl(40, H - 12, `${lead.topArtist || vn(lead.value) + ' nghệ sĩ'}`, 'start', { fill: 'var(--text)', fontSize: 22, fontWeight: 800 }));
+  else k.push(lbl(W / 2, H / 2, 'Cần metadata quốc gia của artist để vẽ Artist Map', 'middle', { fill: 'var(--text3)', fontSize: 18, fontWeight: 700 }));
+  return frame(W, H, k);
+}
+
 // Cột nhóm 7 ngày: trung bình cùng thứ · tuần trước · tuần này.
 export function grouped(days: Any[], o: Any = {}) {
   const W = 342, H = 150, top = 18, bot = H - 20, pw = W - 30, step = pw / 7, bw = 10, cols = ["var(--c2)", "var(--text3)", "var(--accent)"];

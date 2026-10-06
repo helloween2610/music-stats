@@ -227,7 +227,7 @@ export const ArtistListRow = ({ r, timeFirst = false }: { r: Any; timeFirst?: bo
   const swapMetrics = timeFirst ? isPlays(primary) : isPlays(r.small);
   const counts = r.libraryTracks != null && r.listenedTracks != null;
   return <ShortcutTarget entity={artistShortcut(r)}><button type="button" className="artist-tile" onClick={r.onTap}>
-    <div className="artist-avatar-wrap"><Thumb ini={r.ini || r.name?.slice(0,2) || '♫'} img={r.img} round size={136} /><ArtworkRank rank={r.allTimeRank ?? r.rank} change={r.allTimeChange} comparison={r.allTimeComparison}/></div>
+    <div className="artist-avatar-wrap"><Thumb ini={r.ini || r.name?.slice(0,2) || '♫'} img={r.img} round size={136} /><ArtworkRank rank={r.allTimeRank} change={r.allTimeChange} comparison={r.allTimeComparison}/></div>
     <div className="artist-title-line"><MetadataHelp item={{title:'Màu nghệ sĩ',text:r.name}}><div className={`artist-name tone-${r.titleTone || 'gray'}`}><span className="tile-rank">{r.rank}.</span> {r.name} <Flags hot={r.hot} cold={r.cold} /></div></MetadataHelp>
     </div>
     {!counts && <MusicMetadata items={r.metadata} hideAdded />}

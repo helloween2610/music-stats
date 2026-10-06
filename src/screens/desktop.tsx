@@ -91,6 +91,7 @@ export function DesktopOverviewScreen({vm}:P) {
         </> : <>
           <Panel title="Lượt nghe theo tháng" subtitle={vm.rd.month}><Chart wide>{vm.ch.month}</Chart>{vm.hasBefore&&<p className="web-chart-note">{vm.beforeL}</p>}</Panel>
           <Panel title="Giờ nghe theo tháng" subtitle={vm.rd.hours}><Chart wide>{vm.ch.hours}</Chart></Panel>
+          {vm.ch.calendar && <Panel title="Listening Calendar" subtitle={vm.rd.calendar}><Chart wide>{vm.ch.calendar}</Chart></Panel>}
         </>}
       </div>
       <Highlights summary={vm.monthSummary}/>
@@ -108,10 +109,16 @@ export function DesktopOverviewScreen({vm}:P) {
 }
 
 export function DesktopReleaseYearsScreen({vm}:P) {
-  return <div className="web-dashboard"><Panel title="Bài thêm vào thư viện theo năm phát hành" subtitle={vm.rd.area} className="web-area-panel">
-    {vm.ch.area ? <Chart wide>{vm.ch.area}</Chart> : <p className="web-empty">Chưa có dữ liệu năm phát hành.</p>}
-    <Legend items={vm.areaLegend.map((r:Row)=>({color:r.color,label:r.name}))}/>
-  </Panel></div>;
+  return <div className="web-dashboard web-release-years-dashboard">
+    <Panel title="Bài thêm vào thư viện theo năm phát hành" subtitle={vm.rd.area} className="web-area-panel">
+      {vm.ch.area ? <Chart wide>{vm.ch.area}</Chart> : <p className="web-empty">Chưa có dữ liệu năm phát hành.</p>}
+      <Legend items={vm.areaLegend.map((r:Row)=>({color:r.color,label:r.name}))}/>
+    </Panel>
+    <div className="web-release-chart-grid">
+      <Panel title="Top Tags" subtitle="Theo năm phát hành"><Chart wide>{vm.ch.tags || <p className="web-empty">Chưa có dữ liệu tag.</p>}</Chart></Panel>
+      <Panel title="Artist Map" subtitle="Theo quốc gia artist"><Chart wide>{vm.ch.artistMap}</Chart></Panel>
+    </div>
+  </div>;
 }
 
 export function DesktopTrendScreen({vm}:P) {

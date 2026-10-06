@@ -132,7 +132,12 @@ export async function discoveryGet(path: string, signal?: AbortSignal) {
   if (signal?.aborted) abort();
   const timer = setTimeout(abort, 60000);
   try {
-    const response = await fetch((BROWSER_PREVIEW ? '/__discovery' : API_BASE + '/discovery') + path, {
+    // /__discovery is a Vite development middleware. A production browser build is
+    // static, so it must call the deployed Worker directly (which already permits
+    // cross-origin requests). Using the dev proxy in production made every
+    // discovery request, including Last.fm now-playing, resolve to the Site's 404.
+    const base = BROWSER_PREVIEW && import.meta.env.DEV ? '/__discovery' : API_BASE + '/discovery';
+    const response = await fetch(base + path, {
       headers: { Authorization: 'Bearer ' + API_TOKEN }, signal: controller.signal,
     });
     const data = await response.json();
