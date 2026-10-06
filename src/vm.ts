@@ -117,6 +117,17 @@ const prefetchArtistRankPeriods = (sort: string, currentAsOf: string) => {
     .filter(item => item.value && item.value < currentAsOf)
     .forEach(item => fetchJson(artistRankPath(sort, item.value), true));
 };
+const albumRankAsOf = (p: UI, currentAsOf: string) => artistRankPeriodValue(p.albumRankAsOf, currentAsOf) || currentAsOf;
+const albumRankPeriodChips = (p: UI, currentAsOf: string, set: (v: string) => void) => {
+  const selected = artistRankPeriodValue(p.albumRankAsOf, currentAsOf) || currentAsOf;
+  return artistRankPeriodItems(currentAsOf).map(item => ({ label: item.label, active: selected.slice(0, 7) === item.activeDate.slice(0, 7) && (!/^\d{4}$/.test(item.label) || selected.slice(0, 4) === item.activeDate.slice(0, 4)), onTap: () => set(item.value) }));
+};
+const albumRankPaths = (asOf: string) => albumPlayPaths('all', asOf);
+const prefetchAlbumRankPeriods = (currentAsOf: string) => {
+  artistRankPeriodItems(currentAsOf)
+    .filter(item => item.value && item.value < currentAsOf)
+    .forEach(item => albumRankPaths(item.value).forEach(path => fetchJson(path, true)));
+};
 
 // Ảnh thẻ chia sẻ.
 const statChart = (vals: number[]) => spark(vals, { w: 312, h: 96, inv: false, color: "var(--accent)", full: true, sw: 2 });
@@ -377,7 +388,7 @@ function serverGet(c: Ctx) {
       pull("mprev", `/charts/songs?window=month&asOf=${addDays(D.sum.asOf.slice(0, 8) + "01", -1)}&limit=5`);
   }
   if (scr === "top100") pull("hist", "/history/songs?top=100&months=36");
-  if (scr === "artistsAll") pull("sum", "/summary", true);
+  if (scr === "artistsAll" || (scr === "periodTop" && topPeriod(c.id).kind === "albums" && topPeriod(c.id).scope === "all")) pull("sum", "/summary", true);
   if (scr === "rising" || scr === "trend") {
     if (pull("hist", "/history/songs?top=100&months=36")) {
       const date = D.hist.asOf || vnToday();
@@ -420,33 +431,49 @@ function serverGet(c: Ctx) {
     const t = periodSelection(c);
     const rising = (t.kind === "albums" ? p.albumFilter : p.periodFilter) === "Đang lên";
     if (rising) {
-      const range = allTimeRiseWindow(t.scope, t.asOf < vnToday() ? t.asOf : vnToday());
+      const selectedAlbumAsOfForRise = t.kind === 'albums' && t.scope === 'all' ? albumRankAsOf(p, D.sum?.asOf || vnToday()) : t.asOf;
+      const range = allTimeRiseWindow(t.scope, selectedAlbumAsOfForRise < vnToday() ? selectedAlbumAsOfForRise : vnToday());
       D.periodRiseWindow = range;
       if (t.kind === "artists" || t.kind === "albums") {
         for (const [key, date] of [["periodATBefore", range.before], ["periodATEnd", range.end]]) {
-          pull(key, `/charts/${t.kind}?${t.kind === "artists" ? "window=at&" : ""}limit=5000&asOf=${date}`);
-          if (t.kind === "albums" && D.metadataRows && hasGroupedAlbums(D.metadataRows)) pull(key + "Stats", `/ratings?asOf=${date}`);
+          pull(key, `/charts/${t.kind}?${t.kind === "artists" ? "window=at&" : ""}limit=5000&asOf=${date}`, t.kind === "albums" && t.scope === "all" && date < (D.sum?.asOf || vnToday()));
+          if (t.kind === "albums" && D.metadataRows && hasGroupedAlbums(D.metadataRows)) pull(key + "Stats", `/ratings?asOf=${date}`, t.kind === "albums" && t.scope === "all" && date < (D.sum?.asOf || vnToday()));
         }
       } else pull("periodATHistory", "/history/songs?top=5000&months=36");
     }
     if (t.kind !== "albums" && !t.newOnly && (t.kind === "artists" ? p.periodSort === "Lịch sử" : p.songView === "Lịch sử")) pull("rankHistory", `/history/period?scope=${t.scope}&asOf=${t.asOf}&kind=${t.kind}&sort=hours&limit=25`, true);
     if(t.kind === "albums") {
-      const loadPlays=(key:string,scope:string,date:string)=>{
+      const currentAsOf = D.sum?.asOf || vnToday();
+      const selectedAlbumAsOf = t.scope === 'all' ? albumRankAsOf(p, currentAsOf) : t.asOf;
+      const historicalAlbumAsOf = t.scope === 'all' && selectedAlbumAsOf < currentAsOf ? selectedAlbumAsOf : "";
+      const loadPlays=(key:string,scope:string,date:string,cacheOnly=false)=>{
         const responses:Any[]=[];let complete=true;
         for(const [i,path] of albumPlayPaths(scope,date).entries()){
           const responseKey=key+i;
-          if(pull(responseKey,path))responses.push(D[responseKey]);else complete=false;
+          const e=fetchJson(path, cacheOnly);
+          if(e.data!=null){
+            D[responseKey]=e.data;responses.push(D[responseKey]);
+            dataTimes.push(e.dataAt);if(e.st!=="ok")stale=true;
+          }else{
+            complete=false;
+            if(e.st==="err"){st="err";failed=true;if(e.code)codes.push(e.code);}
+            else if(st!=="err")st="loading";
+          }
           delete D[responseKey];
         }
         if(complete)D[key]={rows:mergeAlbumPlayResponses(responses)};
       };
-      loadPlays("albumPlays",t.scope,t.asOf);
+      loadPlays("albumPlays",t.scope,selectedAlbumAsOf,!!historicalAlbumAsOf);
+      if(t.scope === 'all') prefetchAlbumRankPeriods(currentAsOf);
       if(p.albumSort === "Lịch sử"){
-        D.albumHistoryDates=albumHistoryDates(t.scope,t.asOf);
-        D.albumHistoryDates.forEach((date:string)=>loadPlays("albumHistory"+date,t.scope,date));
+        D.albumHistoryDates=albumHistoryDates(t.scope,selectedAlbumAsOf);
+        D.albumHistoryDates.forEach((date:string)=>loadPlays("albumHistory"+date,t.scope,date,t.scope==='all'&&date<currentAsOf));
       }else if(p.albumFilter === "Mới vào"){
-        const prev=comparisonPeriod(t.scope,t.asOf);
-        loadPlays("previousAlbums",prev.scope,prev.asOf);
+        const prev=comparisonPeriod(t.scope,selectedAlbumAsOf);
+        loadPlays("previousAlbums",prev.scope,prev.asOf,t.scope==='all'&&prev.asOf<currentAsOf);
+      }else if(p.albumFilter === "Đang lên" && t.scope === 'all' && D.periodRiseWindow){
+        loadPlays("periodATBeforeStats",'all',D.periodRiseWindow.before,D.periodRiseWindow.before<currentAsOf);
+        loadPlays("periodATEndStats",'all',D.periodRiseWindow.end,D.periodRiseWindow.end<currentAsOf);
       }
     }
     else if (t.newOnly) pull("additions", `/new-additions?scope=${t.scope}&asOf=${t.asOf}&limit=5000&inLibrary=1&v=3`);
@@ -848,7 +875,13 @@ function mapServer(c: Ctx, D: Any) {
     });
     o.albumFilterChips = chips(["Tất cả", "Mới vào"], p.albumFilter, value => c.set(() => ({ albumFilter: value })));
     o.periodIsAlbums=true;o.periodAllTime=t.scope==='all';o.albumIsHistory=p.albumSort==='Lịch sử';
-    const sort=p.albumSort==='Lượt'?'Lượt':'Giờ nghe',limit=listDisplayLimit(o.periodAllTime,p.periodListSize);
+    const currentAsOf = D.sum?.asOf || asOf;
+    const selectedAlbumAsOf = o.periodAllTime ? albumRankAsOf(p,currentAsOf) : t.asOf;
+    if(o.periodAllTime){
+      o.albumRankMonthChips=albumRankPeriodChips(p,currentAsOf,(value)=>c.set(()=>({albumRankAsOf:value})));
+      o.albumRankPeriodNote=selectedAlbumAsOf.slice(0,7)===currentAsOf.slice(0,7)?"Đang hiển thị dữ liệu hiện tại.":`Xếp hạng tính đến ${dmy(selectedAlbumAsOf)}.`;
+    }
+    const sort=p.albumSort==='Lượt'?'Lượt':'Giờ nghe',limit=o.periodAllTime?32:listDisplayLimit(o.periodAllTime,p.periodListSize);
     o.topPeriodTitle=periodTopTitle(c.id, c.p.periodFilter);
     o.periodNote=o.periodAllTime && sort!=="Lượt" ? "Xếp theo Level giảm dần, sau đó giờ nghe All time giảm dần." : `Xếp theo ${sort.toLowerCase()} trong kỳ.`;
     const current=rankedAlbums(D.albumPlays?.rows || [],D.metadataRows || [],sort,o.periodAllTime).slice(0,limit);
@@ -1141,7 +1174,7 @@ export function buildVM(c: Ctx): VM {
   const { st, D, codes, stale, failed, dataAt } = serverGet(c);
   const p = c.p;
   // Cache raw server data, not React elements or callbacks tied to old UI state.
-  const viewKey = "view:" + JSON.stringify([c.screen, c.id, p.sort, p.scope, p.artistFilter, p.artistRankAsOf,p.albumSort,p.albumFilter,
+  const viewKey = "view:" + JSON.stringify([c.screen, c.id, p.sort, p.scope, p.artistFilter, p.artistRankAsOf,p.albumSort,p.albumFilter,p.albumRankAsOf,
     "Tháng", p.qd, p.findK, p.fqd, p.sheet, ...(c.screen === "periodTop" && p.periodFilter === "Mới thêm" ? ["new"] : [])]);
   const previous = lastGood.get(viewKey);
   const label = (at: number, error: boolean) =>

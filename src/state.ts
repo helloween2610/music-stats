@@ -72,6 +72,7 @@ export type UI = {
   artistFilter: string;
   artistRankAsOf: string;
   albumFilter: string;
+  albumRankAsOf: string;
   albumSort: "Giờ nghe" | "Lượt" | "Lịch sử";
   songView: "Danh sách" | "Lịch sử";
   sort: "Giờ nghe" | "Điểm" | "Lượt" | "Lịch sử";
@@ -100,7 +101,7 @@ export const BASE: UI = {
   views: readViews(), playlistSort: "Thứ tự gốc", playlistFolder: "Tất cả", listLimit: 50, releaseMode: "recent",
   periodListSize: readPeriodListSize(),
   pageParents: {},
-  artistFilter: "Tất cả", artistRankAsOf: "", albumFilter: "Tất cả", albumSort: "Giờ nghe",
+  artistFilter: "Tất cả", artistRankAsOf: "", albumFilter: "Tất cả", albumRankAsOf: "", albumSort: "Giờ nghe",
   tab: 0, songView: "Danh sách", periodSort: "Giờ nghe", periodFilter: "Tất cả", filter: "Tất cả", sort: "Giờ nghe", scope: "Tháng",
   open: 0, q: "", qd: "", lfmBusy: false, libBusy: false, ptoast: "", pick: {}, matched: {},
   findK: null, fq: "", fqd: "", rmTouched: false, remaster: true, remerge: false, sel: {}, sheet: false, toast: "",

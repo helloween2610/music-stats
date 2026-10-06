@@ -551,8 +551,10 @@ function RankHistoryPanel({ vm }: { vm: VM }) {
 
 export function PeriodTopScreen({ vm, c }: P) {
   if(vm.periodIsAlbums){
-    const limit=listDisplayLimit(vm.periodAllTime,c?.p?.periodListSize);
+    const limit=vm.periodAllTime ? 32 : listDisplayLimit(vm.periodAllTime,c?.p?.periodListSize);
     return <><div className="ranking-tabs"><SegTabs items={vm.albumSortChips || []}/></div>
+      {vm.periodAllTime && !vm.albumIsHistory && <div className="ranking-month-tabs"><SegTabs items={vm.albumRankMonthChips || []}/></div>}
+      {vm.albumRankPeriodNote && !vm.albumIsHistory && <div className="note">{vm.albumRankPeriodNote}</div>}
       {vm.albumIsHistory ? <RankHistoryPanel vm={vm}/> : <>
       {vm.albums.length ? <AlbumGrid albums={vm.albums.slice(0,limit)} showRank hideArtist/> : <EmptyState title="Chưa có album phù hợp" note=""/>}
       </>}
