@@ -4,12 +4,13 @@ import { ArtworkRank } from '@/components/artwork-rank';
 import { AppleMusicArtwork } from '@/components/apple-music-artwork';
 import { Thumb } from '@/components/ui';
 import { SongTitle } from '@/components/music-metadata';
+import { ReleaseExclusionSettings } from '@/components/release-exclusion-settings';
 import { durationLabel } from '@/lib/metadata';
 import { ini } from '@/lib/fmt';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Ctx } from '@/vm';
 import { albumId } from '@/lib/albums';
-import { DiscoveryError, rememberReleaseAlbum, loadLyrics, loadSimilarTracks, openReleases, loadReleases, releaseDate, releaseGroup, releasePhase, releaseInWindow, releaseSnapshot, subscribeReleases, vnDate, type Lyrics, type Release, type SimilarTrack } from '@/lib/discovery';
+import { DiscoveryError, rememberReleaseAlbum, loadLyrics, loadSimilarTracks, openReleases, loadReleases, releaseDate, releaseGroup, releasePhase, releaseInWindow, releaseScanLabel, releaseSnapshot, subscribeReleases, vnDate, type Lyrics, type Release, type SimilarTrack } from '@/lib/discovery';
 
 function Retry({ error, onRetry, compact = false }: { error: DiscoveryError; onRetry: () => void; compact?: boolean }) {
   const [now, setNow] = useState(Date.now());
@@ -118,27 +119,31 @@ export function ReleasesScreen({ c }: { c: Ctx }) {
   useEffect(()=>{void openReleases();}, []);
   const today = vnDate(), fold = (s: string)=>s.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
   const uncertain = feed.rows.filter(r=>releasePhase(r.date,today)==='unknown').length;
-  const all = feed.rows.filter(r=>releaseInWindow(r.date,mode,today));
+  const scanLabel = releaseScanLabel(feed.scan);
+  const all = feed.rows.filter(r=>releaseInWindow(r.date,mode,today,feed.recentDays));
   const rows = all.filter(r=>fold(r.title+' '+r.artist).includes(fold(query.trim())))
     .sort((a,b)=>(mode==='recent' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)) || a.artist.localeCompare(b.artist));
   const groups = new Map<string, Release[]>();
   rows.forEach(r=>{const group=releaseGroup(r.date,mode,today);groups.set(group,[...(groups.get(group)||[]),r]);});
   return <div className="releases-page">
     <div className="release-tabs" role="tablist" aria-label="Lịch phát hành">
-      {[['recent','Mới phát hành'],['upcoming','Sắp ra mắt']].map(([id,label])=><button key={id} role="tab" aria-selected={mode===id} className={mode===id?'on':''} onClick={()=>setMode(id)}>{label}</button>)}
+      {[['recent','Mới phát hành'],['upcoming','Sắp ra mắt'],['settings','Cài đặt']].map(([id,label])=><button key={id} role="tab" aria-selected={mode===id} className={mode===id?'on':''} onClick={()=>setMode(id as 'recent'|'upcoming'|'settings')}>{label}</button>)}
     </div>
-    <div className="release-tools">
-      <input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Tìm album, nghệ sĩ" aria-label="Tìm album, nghệ sĩ" />
-      <div className="release-status t3" role="status">{mode==='recent' ? '90 ngày gần đây' : '12 tháng tới'} · {all.length} bản phát hành
-        {feed.total>0 && <span> · Server {feed.checked}/{feed.total} nghệ sĩ</span>}
+    {mode==='settings' ? <div className="release-tools"><ReleaseExclusionSettings embedded /></div> : <>
+      <div className="release-tools">
+        <input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Tìm album, nghệ sĩ" aria-label="Tìm album, nghệ sĩ" />
+        <div className="release-status t3" role="status">{mode==='recent' ? `${feed.recentDays} ngày gần đây` : '12 tháng tới'} · {all.length} bản phát hành
+          {feed.total>0 && <span> · Server {feed.checked}/{feed.total} nghệ sĩ</span>}
+          {scanLabel && <span> · {scanLabel}</span>}
+        </div>
+        {feed.error && <div className="release-actions"><Retry compact error={feed.error} onRetry={()=>void loadReleases()} /></div>}
       </div>
-      {feed.error && <div className="release-actions"><Retry compact error={feed.error} onRetry={()=>void loadReleases()} /></div>}
-    </div>
-    {[...groups].map(([label,items])=><section key={label}><h2 className="sec">{label}</h2><div className="release-grid">{items.map(r=><ReleaseCard key={r.id} release={r} c={c}/>)}</div></section>)}
-    {!rows.length && <div className="card pad release-empty"><div className="release-empty-icon" aria-hidden="true">♫</div>
-      <strong>{feed.busy ? 'Đang tải dữ liệu đã lưu…' : query ? 'Không có kết quả phù hợp' : 'Chưa tìm thấy bản phát hành'}</strong>
-      <p className="t2">{query ? 'Thử tên album hoặc nghệ sĩ khác.' : 'Lịch chỉ hiện các bản phát hành có dữ liệu từ nguồn, thuộc nghệ sĩ trong thư viện đã nghe trên 30 phút hoặc có bài Melodeath metal.'}</p>
-    </div>}
+      {[...groups].map(([label,items])=><section key={label}><h2 className="sec">{label}</h2><div className="release-grid">{items.map(r=><ReleaseCard key={r.id} release={r} c={c}/>)}</div></section>)}
+      {!rows.length && <div className="card pad release-empty"><div className="release-empty-icon" aria-hidden="true">♫</div>
+        <strong>{feed.busy ? 'Đang tải dữ liệu đã lưu…' : query ? 'Không có kết quả phù hợp' : 'Chưa tìm thấy bản phát hành'}</strong>
+        <p className="t2">{query ? 'Thử tên album hoặc nghệ sĩ khác.' : 'Lịch chỉ hiện các bản phát hành có dữ liệu từ nguồn, thuộc nghệ sĩ trong thư viện đã nghe trên 30 phút hoặc có bài Melodeath metal.'}</p>
+      </div>}
+    </>}
     <p className="release-footer t3">Nguồn lịch: <a href="https://musicbrainz.org" target="_blank" rel="noreferrer">MusicBrainz ↗</a> · <a href="https://bandcamp.com" target="_blank" rel="noreferrer">Bandcamp ↗</a> · Ảnh: Bandcamp / Cover Art Archive.<br/>
       Chạm bìa hoặc tên album để xem album. Chạm bìa lớn trong trang album để chia sẻ liên kết Apple Music.<br/>
       Lịch có thể chưa đầy đủ; ngày phát hành có thể thay đổi. Server quét lúc 07:30 mỗi ngày; app chỉ đọc danh sách đã lưu.

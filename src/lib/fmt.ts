@@ -30,6 +30,8 @@ export const DOWF = ["Chủ nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Th�
 export const DOWS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
 export const vnToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+export const vnWeekdayIndex = (now = Date.now()) => (new Date(now + 7 * 3600e3).getUTCDay() + 6) % 7;
+export const vnHour = (now = Date.now()) => new Date(now + 7 * 3600e3).getUTCHours();
 export const ymd = (s: string) => {
   const [y, m, d] = String(s).slice(0, 10).split("-").map(Number);
   return { y, m, d };

@@ -15,7 +15,7 @@ import {
 } from "@/lib/charts";
 import {
   addDays, ago, cap1, d1, dm, dmy, dow, DOWF, DOWS, fmtH, fmtMin, fmtLocal, fmtWhen, fold, hhmm, hhmmdm, ini, mlab,
-  monthsBack, pad, weekdayDate, toMs, pctTxt, per, prevYm, shortDate, slug, vn, vnToday, ymd,
+  monthsBack, pad, weekdayDate, toMs, pctTxt, per, prevYm, shortDate, slug, vn, vnHour, vnToday, vnWeekdayIndex, ymd,
 } from "@/lib/fmt";
 import * as S from "@/lib/sample";
 import { metadataIndex, trackMetadata, collectionMetadata, ratingTone, artistTone, dateLabel, releaseTone, durationLabel, durationTone } from "@/lib/metadata";
@@ -171,8 +171,8 @@ export function charts(c: Ctx, song: Any, art: Any, cd: Any = SAMPLE_CD) {
     rd.week = d.v ? `${d.full}: trung bình ${d.v[0] == null ? "–" : d1(d.v[0])} · tuần trước ${d.v[1]} · tuần này ${d.v[2] ?? "chưa tới"}` : `${d.full}: chưa tới`;
   }
   if (scr === "today" && Array.isArray(cd.weekHours)) {
-    const vals = cd.weekHours, j = vals.indexOf(Math.max(...vals));
-    ch.weekHour = listeningClock(vals, { compact: true });
+    const vals = cd.weekHours, j = Math.min(sel("weekHour", vnHour()), vals.length - 1);
+    ch.weekHour = listeningClock(vals, { sel: j, onSel: on("weekHour"), compact: true });
     rd.weekHour = `${pad(j)}h–${pad((j + 1) % 24)}h · ${vals[j]} lượt`;
   }
   if (scr === "overview" && cd.ov && cd.ov.months.length) {
@@ -184,7 +184,7 @@ export function charts(c: Ctx, song: Any, art: Any, cd: Any = SAMPLE_CD) {
     ch.hours = lineChart([{ vals: O.months.map((m: Any) => m.hours || 0), color: "var(--accent)", area: true, dots: O.dots || [] }], O.months.map((m: Any, k: number) => (k % 5 === 0 ? m.l : "")), { ...wide, tf: (v: number) => Math.round(v) + "h", sel: jh, onSel: on("hours") });
     rd.hours = `T${O.months[jh].l} · ${fmtH(O.months[jh].hours || 0)}`;
     if ((p.scope === "Tháng" || p.scope === "Tháng trước") && O.day) {
-      const jd = Math.min(sel("day", O.dayDef ?? O.day.length - 1), O.day.length - 1), jw = sel("wd", 5), jr = sel("hr", O.hr.indexOf(Math.max(...O.hr)));
+      const jd = Math.min(sel("day", O.dayDef ?? O.day.length - 1), O.day.length - 1), jw = sel("wd", vnWeekdayIndex()), jr = sel("hr", vnHour());
       ch.day = vbars(O.day, O.dayTicks || O.day.map((_: Any, k: number) => ((k + 1) % 5 === 0 || k === 0 ? String(k + 1) : "")), { sel: jd, onSel: on("day") });
       rd.day = `${O.dayDates?.[jd] || `${pad(jd + 1)}/${O.mm}`} · ${O.day[jd] ? O.day[jd] + " lượt" : "chưa có lượt"}`;
       ch.wd = vbars(O.wd, S.WDL, { w: DESKTOP_WEB ? 342 : 156, h: 156, sel: jw, onSel: on("wd") });
@@ -608,10 +608,12 @@ function serverGet(c: Ctx) {
     }
   }
   if (scr === "album" && D.metadataRows) {
-    const identity=parseAlbumId(c.id), key=identity ? identity.artist+US+identity.title : null;
-    D.albumTracks=D.metadataRows.filter((t:Any)=>albumKey(t)===key);
-    const ids=new Set(D.albumTracks.map((t:Any)=>t.id));
-    D.albumStats={rows:(D.metadataStats?.rows || []).filter((r:Any)=>ids.has(r.track_id))};
+    // Keep the full library available on album detail. Some catalog editions are
+    // split into duplicate local tracks, while Last.fm attaches every play to one
+    // sibling. albumView still renders only the requested album, but can borrow
+    // stats from the matching sibling when the visible edition has 0 plays.
+    D.albumTracks=D.metadataRows;
+    D.albumStats=D.metadataStats;
   }
   if (scr === "rules") pull("rules", "/library/title-rules");
   return { st: st as "ok" | "loading" | "err", D, codes, stale, failed, dataAt: dataTimes.length ? Math.min(...dataTimes) : 0 };

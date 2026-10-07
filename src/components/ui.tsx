@@ -1,4 +1,4 @@
-import { CSSProperties, ReactNode } from "react";
+import { CSSProperties, ReactNode, useEffect, useRef } from "react";
 
 type Any = any;
 
@@ -48,9 +48,17 @@ export function ScopeTabs({ items }: { items: { label: string; active: boolean; 
   </div>;
 }
 
-export function SegTabs({ items }: { items: { label: string; active: boolean; onTap: () => void }[] }) {
+export function SegTabs({ items, scrollActive = false }: { items: { label: string; active: boolean; onTap: () => void }[]; scrollActive?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const activeLabel = items.find((item) => item.active)?.label;
+  useEffect(() => {
+    if (!scrollActive || !ref.current) return;
+    const active = ref.current.querySelector<HTMLElement>(".seg-item.on");
+    if (!active) return;
+    ref.current.scrollLeft = Math.max(0, active.offsetLeft + active.offsetWidth - ref.current.clientWidth);
+  }, [activeLabel, scrollActive]);
   return (
-    <div className="seg">
+    <div className="seg" ref={ref}>
       {items.map((c) => (
         <div key={c.label} className={"seg-item" + (c.active ? " on" : "")} onClick={c.onTap}>
           {c.label}

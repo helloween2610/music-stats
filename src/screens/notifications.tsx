@@ -24,6 +24,8 @@ const artOf=(row:NotificationItem,artwork:NotificationArtwork)=>{
   if(row.entity_kind==='release')return {img:row.payload?.cover||artwork.albums[`${row.payload?.artist||''}\u001f${row.payload?.title||''}`],label:row.payload?.title||'Album',round:false};
   return {img:'',label:'TT',round:false};
 };
+const digestable=(item:NotificationItem)=>item.type!=='daily_digest'&&item.type!=='artist_overdue'&&item.type!=='artist_forgotten';
+const digestItems=(row:NotificationItem,rows:NotificationItem[])=>rows.filter(item=>digestable(item)&&item.event_at.slice(0,10)===row.event_at.slice(0,10));
 const artistDigestText=(row:NotificationItem)=>{
   const artist=String(row.payload?.artist||row.entity_id||'Nghệ sĩ');
   if(row.type==='artist_month_rank_1')return `${artist} lên #1 tháng`;
@@ -32,21 +34,20 @@ const artistDigestText=(row:NotificationItem)=>{
 };
 const dailyDigestBody=(row:NotificationItem,rows:NotificationItem[])=>{
   if(row.type!=='daily_digest')return row.body;
-  const day=row.event_at.slice(0,10);
-  const items=rows.filter(item=>item.type!=='daily_digest'&&item.event_at.slice(0,10)===day);
-  const artistItems=items.filter(item=>item.type.startsWith('artist_')&&item.type!=='artist_overdue');
+  const items=digestItems(row,rows);
+  const artistItems=items.filter(item=>item.type==='artist_month_rank_1');
   const details=artistItems.map(artistDigestText);
   const shown=details.slice(0,4);
-  const artistPart=shown.length ? `${shown.join(' · ')}${details.length>shown.length?` · +${details.length-shown.length} artist`:''}` : '';
+  const artistPart=shown.length ? `${shown.join(' · ')}${details.length>shown.length?` · +${details.length-shown.length} nghệ sĩ`:''}` : '';
   const songCount=Number(row.payload?.songs)||items.filter(item=>item.type.startsWith('song_')).length;
   const releaseCount=Number(row.payload?.releases)||items.filter(item=>item.type.startsWith('release_')).length;
   const parts=[songCount&&`${songCount} thay đổi bài hát`,artistPart,releaseCount&&`${releaseCount} bản phát hành`].filter(Boolean);
-  return parts.length?parts.join(' · ')+'.':row.body;
+  return parts.length?parts.join(' · ')+'.':'Không có thay đổi hạng hoặc phát hành mới.';
 };
 
 function NotificationArt({row,rows,artwork}:{row:NotificationItem;rows:NotificationItem[];artwork:NotificationArtwork}){
   if(row.type==='daily_digest'){
-    const items=rows.filter(item=>item.type!=='daily_digest').slice(0,3);
+      const items=digestItems(row,rows).slice(0,3);
     return <div className="notification-art notification-art-stack" aria-hidden="true">{items.map(item=>{const art=artOf(item,artwork);return <Thumb key={item.id} ini={art.label.slice(0,2).toUpperCase()} img={art.img} round={art.round} size={25}/>;})}</div>;
   }
   const art=artOf(row,artwork);
@@ -55,10 +56,10 @@ function NotificationArt({row,rows,artwork}:{row:NotificationItem;rows:Notificat
 
 export function NotificationsScreen({c}:{c:Ctx}){
   const feed=useSyncExternalStore(subscribeNotifications,notificationSnapshot,notificationSnapshot);
-  useEffect(()=>{void loadNotifications();},[]);
+  useEffect(()=>{void loadNotifications().then(()=>{if(notificationSnapshot().unread)void markNotificationsRead('all');});},[]);
   const groups=useMemo(()=>{
     const map=new Map<string,NotificationItem[]>(),today=vnToday();
-    feed.rows.forEach(row=>{const key=groupOf(row,today);map.set(key,[...(map.get(key)||[]),row]);});return map;
+    feed.rows.forEach(row=>{if(row.type==='daily_digest'&&!digestItems(row,feed.rows).length)return;const key=groupOf(row,today);map.set(key,[...(map.get(key)||[]),row]);});return map;
   },[feed.rows]);
   async function open(row:NotificationItem){
     if(!row.read_at)void markNotificationsRead([row.id]);

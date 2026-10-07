@@ -21,6 +21,7 @@ export function discoveryPreview(): Plugin {
     } catch {}
   }
   const values = new Map<string,{value:any;expires:number}>(), rates = new Map<string,number>();
+  let releaseScanSettings={watchlist:[] as string[],excluded:[] as string[],recentDays:90 as 90|180,updatedAt:''};
   const store: DiscoveryStore = {
     async get(key) { const hit=values.get(key); return hit && hit.expires>Date.now() ? hit.value : null; },
     async put(key,value,seconds) { values.set(key,{value,expires:Date.now()+seconds*1000}); },
@@ -28,6 +29,22 @@ export function discoveryPreview(): Plugin {
   };
   const catalogs = new Map<string,{rows:Track[];expires:number}>();
   return {name:'music-discovery-preview',configureServer(server) {
+    server.middlewares.use('/__api',async(req,res,next)=>{
+      const url=new URL(req.url||'/','http://localhost');
+      if(url.pathname!=='/settings/release-scan'){next();return;}
+      if(req.method==='GET'){res.statusCode=200;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({settings:releaseScanSettings}));return;}
+      if(req.method==='POST'){
+        let raw='';req.on('data',chunk=>{raw+=chunk;});req.on('end',()=>{
+          try{
+            const body=JSON.parse(raw||'{}');
+            const clean=(value:any)=>Array.isArray(value)?[...new Set(value.map((n:any)=>String(n||'').trim()).filter(Boolean))].slice(0,1000):[];
+            releaseScanSettings={watchlist:clean(body.watchlist),excluded:clean(body.excluded),recentDays:Number(body.recentDays)===180?180:90,updatedAt:new Date().toISOString()};
+            res.statusCode=200;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({settings:releaseScanSettings}));
+          }catch{res.statusCode=400;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({error:'invalid_settings'}));}
+        });return;
+      }
+      res.statusCode=405;res.end();
+    });
     server.middlewares.use('/__discovery',async(req,res,next)=>{
       if (req.method!=='GET') {res.statusCode=405;res.end();return;}
       const auth=req.headers.authorization;

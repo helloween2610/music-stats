@@ -5,6 +5,7 @@ import { AlbumGrid } from '@/components/album-grid';
 import { MonthWeeksChart } from '@/lib/month-weeks';
 import { compactPlays } from '@/components/music-metadata';
 import { NowPlayingButton, RecentSongs, SongListRow, ArtistStatsLine, RisingSongGroups, RisingArtistGroups } from './main';
+import { ShortcutTarget, artistShortcut, songShortcut } from '@/components/shortcuts';
 
 type P = {vm:VM;c:Ctx};
 type Row = any;
@@ -41,11 +42,11 @@ export function DesktopTodayScreen({vm,c}:P) {
     <div className="web-today-charts">
         <Panel title="Top nghệ sĩ tuần này" subtitle="Xếp theo lượt nghe">
           <div className="web-week-table"><div className="web-week-row web-week-head"><span>Nghệ sĩ</span>{['T2','T3','T4','T5','T6','T7','CN','Tổng'].map(day=><span key={day}>{day}</span>)}</div>
-            {vm.weekTable.length?vm.weekTable.map((r:Row,k:number)=><button key={k} className="web-week-row num" onClick={r.onTap}><span className="web-person"><Thumb ini={r.ini||r.name.slice(0,2)} img={r.img} size={30} round/><span className="ell">{r.name}</span></span>{r.cells.map((cell:Row,j:number)=><span key={j} style={cell.s}>{cell.v}</span>)}<strong>{r.total}</strong></button>):<p className="web-empty">Chưa có lượt nghe trong tuần.</p>}
+            {vm.weekTable.length?vm.weekTable.map((r:Row,k:number)=><ShortcutTarget key={k} entity={artistShortcut(r)}><button className="web-week-row num" onClick={r.onTap}><span className="web-person"><Thumb ini={r.ini||r.name.slice(0,2)} img={r.img} size={30} round/><span className="ell">{r.name}</span></span>{r.cells.map((cell:Row,j:number)=><span key={j} style={cell.s}>{cell.v}</span>)}<strong>{r.total}</strong></button></ShortcutTarget>):<p className="web-empty">Chưa có lượt nghe trong tuần.</p>}
           </div>
         </Panel>
       <Panel className="web-week-chart-panel" title={vm.weekTitle} subtitle="Lượt nghe mỗi ngày"><Legend items={[{color:'var(--c2)',label:'Trung bình'},{color:'var(--text3)',label:'Tuần trước'},{color:'var(--accent)',label:'Tuần này'}]}/><Chart>{vm.ch.week}</Chart></Panel>
-      <Panel title="Giờ nghe trong tuần" subtitle="Phân bố trong 24 giờ"><Chart clock>{vm.ch.weekHour || <p className="t3">Chưa có lượt nghe</p>}</Chart></Panel>
+      <Panel title="Giờ nghe trong tuần" subtitle={vm.rd.weekHour || "Phân bố trong 24 giờ"}><Chart clock>{vm.ch.weekHour || <p className="t3">Chưa có lượt nghe</p>}</Chart></Panel>
     </div>
     <div className="web-two-columns web-today-lists">
       <div className="web-stack">
@@ -73,7 +74,11 @@ function Highlights({summary}:{summary:Row}) {
     {label:'Bài hát tăng hạng',count:summary.risingSongCount,rows:summary.risingSongs,onTap:summary.openRisingSongs},
     {label:'Bài hát mới nổi bật',count:summary.newSongCount,rows:summary.newSongs,onTap:summary.openNewSongs},
   ];
-  return <aside className="web-highlights"><div className="web-rail-title">Điểm nhấn trong kỳ</div>{blocks.map((b:Row)=><button className="web-highlight" key={b.label} onClick={b.onTap}><span className="web-highlight-title">{b.label}<b>{b.count || '0'}</b></span><span className="web-highlight-people">{b.rows?.length?b.rows.slice(0,3).map((r:Row,i:number)=><span className="web-highlight-person" key={i}><Thumb ini={r.ini||r.name?.slice(0,2)||'♫'} img={r.img} round={b.round} size={25}/><span className="ell">{r.name||r.title}</span>{r.change>0&&<b>▲{r.change}</b>}</span>):<span className="web-empty">Chưa có trong kỳ này</span>}</span></button>)}</aside>;
+  return <aside className="web-highlights"><div className="web-rail-title">Điểm nhấn trong kỳ</div>{blocks.map((b:Row)=><button className="web-highlight" key={b.label} onClick={b.onTap}><span className="web-highlight-title">{b.label}<b>{b.count || '0'}</b></span><span className="web-highlight-people">{b.rows?.length?b.rows.slice(0,3).map((r:Row,i:number)=>{
+      const entity=r.tid||r.title ? songShortcut(r) : artistShortcut(r);
+      const content=<span className="web-highlight-person"><Thumb ini={r.ini||r.name?.slice(0,2)||'♫'} img={r.img} round={b.round} size={25}/><span className="ell">{r.name||r.title}</span>{r.change>0&&<b>▲{r.change}</b>}</span>;
+      return <ShortcutTarget key={i} entity={entity}>{content}</ShortcutTarget>;
+    }):<span className="web-empty">Chưa có trong kỳ này</span>}</span></button>)}</aside>;
 }
 
 export function DesktopOverviewScreen({vm}:P) {
@@ -97,7 +102,7 @@ export function DesktopOverviewScreen({vm}:P) {
       <Highlights summary={vm.monthSummary}/>
     </div>
     <div className="web-two-columns web-overview-rankings">
-      <Panel title={vm.topArtistsTitle} action={vm.viewArtists}><div className="web-ranked-artists" style={{gridTemplateRows:`repeat(${Math.max(1,Math.ceil(vm.hourArtists.length/2))}, minmax(0,1fr))`}}>{vm.hourArtists.map((r:Row,k:number)=><button key={k} onClick={r.onTap}><span className="web-position num">{r.rank||k+1}</span><Thumb ini={r.ini||r.name.slice(0,2)} img={r.img} round size={38}/><div className="web-ranked-artist-details"><div className="ell">{r.name}</div><ArtistStatsLine r={r}/></div><span className="web-artist-metrics num"><strong>{compactPlays(r.big||r.v)}</strong>{r.small && <span>{compactPlays(r.small)}</span>}</span></button>)}</div></Panel>
+      <Panel title={vm.topArtistsTitle} action={vm.viewArtists}><div className="web-ranked-artists" style={{gridTemplateRows:`repeat(${Math.max(1,Math.ceil(vm.hourArtists.length/2))}, minmax(0,1fr))`}}>{vm.hourArtists.map((r:Row,k:number)=><ShortcutTarget key={k} entity={artistShortcut(r)}><button onClick={r.onTap}><span className="web-position num">{r.rank||k+1}</span><Thumb ini={r.ini||r.name.slice(0,2)} img={r.img} round size={38}/><div className="web-ranked-artist-details"><div className="ell">{r.name}</div><ArtistStatsLine r={r}/></div><span className="web-artist-metrics num"><strong>{compactPlays(r.big||r.v)}</strong>{r.small && <span>{compactPlays(r.small)}</span>}</span></button></ShortcutTarget>)}</div></Panel>
       <Panel title={vm.topSongsTitle} action={vm.viewSongs}><div className="web-song-list">{vm.top15.map((r:Row,k:number)=><SongListRow key={k} r={r}/>)}</div></Panel>
     </div>
     <div className="web-two-columns">

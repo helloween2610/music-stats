@@ -242,7 +242,7 @@ export function Top100Screen({ vm, c }: P) {
     <>
       <SampleChip show={vm.sampleChip} text={vm.chipText} />
       <div className="ranking-tabs"><SegTabs items={vm.songViewTabs} /></div>
-      {!vm.songIsHistory && <div className="ranking-month-tabs"><SegTabs items={vm.songRankMonthChips || []} /></div>}
+      {!vm.songIsHistory && <div className="ranking-month-tabs"><SegTabs items={vm.songRankMonthChips || []} scrollActive /></div>}
       {vm.songIsHistory ? <RankHistoryPanel vm={vm} /> : <>
       {vm.songFilterNote && <div className="note">{vm.songFilterNote}</div>}
       <RankFocus c={c} rows={vm.top100Rows} kind="song" />
@@ -261,7 +261,7 @@ export function ArtistsAllScreen({ vm, c }: P) {
     <>
       <SampleChip show={vm.sampleChip} text={vm.chipText} />
       <div className="ranking-tabs"><SegTabs items={vm.sortChips} /></div>
-      {!vm.artistIsHistory && <div className="ranking-month-tabs"><SegTabs items={vm.artistRankMonthChips || []} /></div>}
+      {!vm.artistIsHistory && <div className="ranking-month-tabs"><SegTabs items={vm.artistRankMonthChips || []} scrollActive /></div>}
       {vm.artistIsHistory ? <RankHistoryPanel vm={vm} /> : <>
       {vm.artistFilterNote && <div className="note">{vm.artistFilterNote}</div>}
       <RankFocus c={c} rows={vm.artistRows} kind="artist" />
@@ -557,7 +557,7 @@ export function PeriodTopScreen({ vm, c }: P) {
   if(vm.periodIsAlbums){
     const limit=vm.periodAllTime ? ALBUM_ALL_TIME_LIMIT : listDisplayLimit(vm.periodAllTime,c?.p?.periodListSize);
     return <><div className="ranking-tabs"><SegTabs items={vm.albumSortChips || []}/></div>
-      {vm.periodAllTime && !vm.albumIsHistory && <div className="ranking-month-tabs"><SegTabs items={vm.albumRankMonthChips || []}/></div>}
+      {vm.periodAllTime && !vm.albumIsHistory && <div className="ranking-month-tabs"><SegTabs items={vm.albumRankMonthChips || []} scrollActive /></div>}
       {vm.albumIsHistory ? <RankHistoryPanel vm={vm}/> : <>
       {vm.albums.length ? <AlbumGrid albums={vm.albums.slice(0,limit)} showRank hideArtist/> : <EmptyState title="Chưa có album phù hợp" note=""/>}
       </>}

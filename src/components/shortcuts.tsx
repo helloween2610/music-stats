@@ -18,7 +18,7 @@ export const shortcutKey = (e:ShortcutEntity) => JSON.stringify([e.kind,e.kind==
 export const songShortcut = (r:any):ShortcutEntity => {
   const rawPlays=r.allTimeMetric ?? r.metric ?? r.v;
   const plays=rawPlays==null||rawPlays===''?undefined:compactPlays(typeof rawPlays==='number'?`${rawPlays.toLocaleString('vi-VN')} lượt`:String(rawPlays));
-  return {kind:'song',id:r.tid,title:r.title || '',artist:r.artist || '',album:r.album,albumArtist:r.albumArtist,
+  return {kind:'song',id:r.tid,title:r.title || '',artist:r.artist || '',album:r.album,albumArtist:r.albumArtist,releaseId:r.releaseId,
     detail:!r.unmatched ? r.onTap : undefined,goAlbum:r.goAlbum,image:r.img,initials:r.ini || r.title?.slice(0,2)?.toUpperCase(),
     metadata:r.allTimeMetadata ?? r.metadata,plays,listening:r.allTimeListening ?? r.listening,titleTone:r.titleTone,actionsOnly:!!r.shortcutActionsOnly};
 };
@@ -132,9 +132,11 @@ function ShortcutSheet({entity:e,c,close}:{entity:ShortcutEntity;c:Ctx;close:()=
     else if(e.id)c.go('song',e.id);
   };
   const find=()=>{
+    if(e.kind==='album') { close(); c.go('periodTop','albums~all'); return; }
     c.set(()=>({rankFocus:{key:shortcutKey(e),kind:e.kind as 'song'|'artist',label:e.title,request:Date.now()}}));
     close(); c.go(e.kind==='song'?'top100':'artistsAll');
   };
+  const findLabel=e.kind==='song'?'Find in Top 100 All time':e.kind==='artist'?'Find in Top 32 Artist All time':'Find in Top 24 Album All time';
   async function music() {
     if(busy.current||!e.artist||(e.kind!=='artist'&&!e.title))return;
     busy.current=true;setSharing(true);
@@ -169,7 +171,7 @@ function ShortcutSheet({entity:e,c,close}:{entity:ShortcutEntity;c:Ctx;close:()=
         <button type="button" disabled={!e.artist} onClick={()=>{close();c.go('artist',e.artist);}}>Go to Artist <span>›</span></button>
         <button type="button" disabled={!e.album&&!e.goAlbum} onClick={()=>{close();if(e.goAlbum)e.goAlbum();else c.go('album',albumId(e.albumArtist||e.artist,e.album!));}}>Go to Album <span>›</span></button>
       </>}
-      {e.kind!=='album'&&<button type="button" onClick={find}>Find in Top 100 All time <span>⌕</span></button>}
+      <button type="button" onClick={find}>{findLabel} <span>⌕</span></button>
       <button type="button" disabled={sharing||!e.artist||(e.kind!=='artist'&&!e.title)} onClick={()=>void music()}>{sharing?'Đang lấy liên kết…':'Open in Music'} <span>↗</span></button>
       {linkError&&<div className="shortcut-status t3" role="status">{linkError}</div>}
       <button type="button" className="shortcut-close" onClick={close}>Đóng</button>

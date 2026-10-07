@@ -4,6 +4,7 @@ import { DATA_SOURCE } from "@/config";
 import { getFresh, invalidate, postJson } from "./api";
 import { vn } from "./fmt";
 import { invalidateAppleLinks } from './discovery';
+import { invalidatePlaylistSnapshot } from './playlists';
 
 type Set = (patch: Record<string, any>) => void;
 type Toast = (msg: string) => void;
@@ -40,6 +41,7 @@ function libDone(j: LibReq) {
   stopPoll();
   const sm = j.summary || {};
   if(sm.catalog_changed)invalidateAppleLinks();
+  if(sm.playlists!=null)invalidatePlaylistSnapshot();
   LIBREQ.toast?.(sm.catalog_changed ? "Đã đồng bộ thư viện và ID Apple Music" : !sm.added && !sm.missing && !sm.changed && !sm.metadata_changed ? "Thư viện đã khớp, không có gì mới" : "Đã đồng bộ thư viện");
   invalidate(() => true);
 }

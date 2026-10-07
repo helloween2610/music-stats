@@ -27,6 +27,7 @@ body.browser-desktop {
   .sc > .ranking-tabs { margin-top: -10px; }
   .sc > .ranking-month-tabs { margin-top: 8px; margin-bottom: 12px; margin-left: auto; margin-right: auto; }
   .screen-artistsAll:has(> .artist-grid) { height: 100dvh; overflow-y: hidden; padding-bottom: 0; }
+  .screen-periodTop:has(> .album-grid) { height: 100dvh; overflow-y: hidden; padding-bottom: 0; }
   .sc > :not(.pull-refresh) { max-width: 1420px; margin-left: auto; margin-right: auto; }
   .sc { scrollbar-width: thin; scrollbar-color: #363840 transparent; }
   .sc::-webkit-scrollbar { display: block; width: 7px; }
@@ -69,8 +70,9 @@ body.browser-desktop {
   .chips { padding-left: 0; padding-right: 0; }
   .release-tabs, .seg { max-width: 660px; }
   .artist-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 20px 8px; }
-  .album-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 20px 0; }
+  .album-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px 0; }
   .album-grid .album-cover .thumb { border-radius: 0; }
+  .album-tile .tile-metrics { margin-top: 0; line-height: 1.25; }
   .artist-avatar-wrap { max-width: 100%; }
   .release-grid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 28px 22px; }
   .playlist-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 18px; }
@@ -244,7 +246,7 @@ body.browser-desktop {
   .web-chart > svg { width: 100% !important; height: 100% !important; max-height: 210px; }
   .web-chart > .month-weeks-legend { flex: none; margin: 0 0 10px; font-size: var(--type-caption); }
   .web-chart:has(.month-weeks-legend) > svg { min-height: 0; flex: 1; }
-  .web-clock { align-items: center; }
+  .web-clock { align-items: center; --clock-font-size: 13px; }
   .web-clock > svg { max-width: 200px; max-height: 200px; }
   .web-chart-note { font-size: var(--type-caption); color: var(--text3); margin-top: 8px !important; }
   .web-panel .card { margin: 0; background: transparent; border-radius: 0; }
@@ -291,10 +293,10 @@ body.browser-desktop {
   .web-overview-charts .web-chart:has(.month-weeks-legend) { height: 220px; }
   .web-highlights { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: var(--surface); }
   .web-rail-title { font-size: var(--type-section); font-weight: 650; margin-bottom: 16px; }
-  .web-highlight { display: block; width: 100%; background: none; color: var(--text2); padding: 13px 0; border: 0; border-top: 1px solid var(--line); text-align: left; }
+  .web-highlight { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; align-self: start; width: 100%; height: 100%; background: none; color: var(--text2); padding: 13px 0; border: 0; border-top: 1px solid var(--line); text-align: left; }
   .web-highlight:last-child { padding-bottom: 0; }
-  .web-highlight-title { display: flex; justify-content: flex-start; gap: 8px; font-size: var(--type-caption); font-weight: 600; color: var(--text); }
-  .web-highlight-title > b { color: var(--accent); }
+  .web-highlight-title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: var(--type-caption); font-weight: 600; color: var(--text); }
+  .web-highlight-title > b { color: var(--accent); min-width: 18px; text-align: right; }
   .web-highlight-people { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
   .web-highlight-person { display: flex; align-items: center; gap: 8px; font-size: var(--type-body); line-height: 1.5; }
   .web-highlight-person .thumb { flex: none; font-size: var(--type-caption); }
@@ -380,7 +382,7 @@ body.browser-desktop {
     .web-sidebar nav { margin-top: 30px; }
     .web-sidebar nav button { justify-content: center; padding: 0; height: 46px; }
     .web-overview-body:not(.web-overview-long) { grid-template-columns: minmax(0,1fr); }
-    .web-highlights { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; }
+    .web-highlights { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; align-items: start; }
     .web-rail-title { grid-column: 1/-1; margin: 0; }
     .web-welcome h2 { font-size: 19px; }
     .web-today-intro { grid-template-columns: minmax(0,1.4fr) minmax(280px,1fr); }

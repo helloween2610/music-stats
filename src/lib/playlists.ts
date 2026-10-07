@@ -1,3 +1,4 @@
+import { API_BASE, API_TOKEN, DATA_SOURCE, FETCH_TIMEOUT_MS } from "@/config";
 export type PlaylistTrack = {
   title: string; artist?: string; album?: string; albumArtist?: string; duration?: number;
   year?: number; persistentId?: string; inLibrary?: boolean; missing?: boolean;
@@ -10,8 +11,24 @@ export function playlistMetricMode(folder:string,track:PlaylistTrack,libraryRead
 }
 
 let snapshot: Promise<PlaylistSnapshot> | undefined;
+function bundledPlaylistSnapshot() {
+  return import('@/data/playlists.json').then(data=>data.default as PlaylistSnapshot);
+}
+async function serverPlaylistSnapshot() {
+  const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const to = setTimeout(() => ctl?.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const r = await fetch(API_BASE + "/library/playlists", { headers: { Authorization: "Bearer " + API_TOKEN }, signal: ctl?.signal });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    if (!data || !Array.isArray(data.playlists) || !data.tracks || typeof data.tracks !== 'object') throw new Error('invalid playlist snapshot');
+    return data as PlaylistSnapshot;
+  } finally { clearTimeout(to); }
+}
+export function invalidatePlaylistSnapshot() { snapshot = undefined; }
 export function loadPlaylistSnapshot() {
-  return snapshot ||= import('@/data/playlists.json').then(data=>data.default as PlaylistSnapshot).catch(error=>{snapshot=undefined;throw error;});
+  return snapshot ||= (DATA_SOURCE === 'Server' ? serverPlaylistSnapshot().catch(()=>bundledPlaylistSnapshot()) : bundledPlaylistSnapshot())
+    .catch(error=>{snapshot=undefined;throw error;});
 }
 const key = (value: unknown) => String(value || '').normalize('NFC').trim().toLowerCase().replace(/\s+/g,' ');
 export function playlistLibraryIndex(rows: any[]) {

@@ -55,6 +55,20 @@ export function albumView(id:string|null,rows:Any[],stats:Any,supplemental:Any,r
   const releaseDates=[...new Set(tracks.map(t=>t.releaseDate?.slice(0,10)).filter(date=>typeof date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0,10)===date))];
   const genres=[...new Set(tracks.map(t=>t.genre).filter(Boolean))];
   const duration=tracks.reduce((n,t)=>n+positive(t.duration_s),0);
+  const sameSongKey=(t:Any)=>`${String(t.album_artist || t.artist || '').normalize('NFC').trim().toLowerCase()}${String(t.title || '').normalize('NFC').trim().toLowerCase().replace(/\s+\d+\.\d+(?=\s*(?:\(|$))/g,'').replace(/\s+/g,' ')}`;
+  const playSources=new Map<string,Any>();
+  for(const candidate of Object.values(index.tracks) as Any[]){
+    if(candidate.gone || !(candidate.allPlays>0))continue;
+    const k=sameSongKey(candidate), current=playSources.get(k);
+    if(!current || (candidate.allPlays || 0)>(current.allPlays || 0))playSources.set(k,candidate);
+  }
+  const withBorrowedStats=(t:Any)=>{
+    const source=playSources.get(sameSongKey(t));
+    if(!source || source.id===t.id || (t.allPlays || 0)>0)return t;
+    const td=positive(t.duration_s), sd=positive(source.duration_s);
+    if(td && sd && Math.abs(td-sd)>8)return t;
+    return {...t, allPlays:source.allPlays, statsTrackId:source.id, lastPlayed:source.lastPlayed || t.lastPlayed};
+  };
   return {
     id,key,title:identity.title,artist:identity.artist,ini:ini(identity.title),
     img:artwork?.albums?.[key] || tracks.map(t=>artwork?.tracks?.[t.id]).find(Boolean),
@@ -73,13 +87,13 @@ export function albumView(id:string|null,rows:Any[],stats:Any,supplemental:Any,r
       ...(group.added?[{k:'Thêm vào thư viện',v:dmy(group.added)}]:[]),
     ],
     discs:[...new Set(tracks.map(t=>positive(t.disc)||1))],
-    songs:tracks.map(t=>({
-      tid:t.id,title:t.title,duration_s:t.duration_s,releaseDate:t.releaseDate?.slice(0,10),artist:t.artist || identity.artist,album:canonicalAlbum(t.album_artist || identity.artist,t.album),originalAlbum:t.album,albumArtist:t.album_artist || identity.artist,ini:ini(t.title),img:artwork?.tracks?.[t.id] || artwork?.albums?.[key],
-      disc:positive(t.disc)||1,trackNumber:positive(t.trackNumber)||null,gone:t.in_library===0,
-      titleTone:ratingTone(t.my_rating || 0),artistTone:artistTone(index.artists[t.album_artist || t.artist]?.allHours || 0),metadata:trackMetadata(t,today),
-      metric:t.allPlays==null?'—':vn(t.allPlays)+' lượt',listening:t.allPlays==null?undefined:fmtH(t.allPlays*positive(t.duration_s)/3600),timeFirst:true,
-      onTap:()=>go('song',t.id),
-    })),
+    songs:tracks.map(raw=>{const t=withBorrowedStats(raw);return {
+      tid:raw.id,statsTrackId:t.statsTrackId,title:raw.title,duration_s:raw.duration_s,releaseDate:raw.releaseDate?.slice(0,10),artist:raw.artist || identity.artist,album:canonicalAlbum(raw.album_artist || identity.artist,raw.album),originalAlbum:raw.album,albumArtist:raw.album_artist || identity.artist,ini:ini(raw.title),img:artwork?.tracks?.[raw.id] || artwork?.albums?.[key],
+      disc:positive(raw.disc)||1,trackNumber:positive(raw.trackNumber)||null,gone:raw.in_library===0,
+      titleTone:ratingTone(raw.my_rating || 0),artistTone:artistTone(index.artists[raw.album_artist || raw.artist]?.allHours || 0),metadata:trackMetadata(raw,today),
+      metric:t.allPlays==null?'—':vn(t.allPlays)+' lượt',listening:t.allPlays==null?undefined:fmtH(t.allPlays*positive(raw.duration_s)/3600),timeFirst:true,
+      onTap:()=>go('song',raw.id),
+    }}),
   };
 }
 

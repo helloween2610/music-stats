@@ -1,6 +1,7 @@
 import { mergeReleases, type Release } from '../../../../shared/releases';
 export type { Release } from '../../../../shared/releases';
 import { API_BASE, API_TOKEN, BROWSER_PREVIEW } from '@/config';
+import { ago, hhmmdm } from '@/lib/fmt';
 import { LastGoodStore, cacheScope } from './last-good';
 let discoveryStorage: Storage | undefined;
 try { discoveryStorage = window.localStorage; } catch {}
@@ -8,24 +9,60 @@ try { discoveryStorage = window.localStorage; } catch {}
 const discoveryCache = new LastGoodStore(cacheScope(API_BASE, API_TOKEN) + ':discovery', discoveryStorage, 500000);
 
 const EXCLUSIONS_KEY=cacheScope(API_BASE,API_TOKEN)+':release-exclusions:v1';
+const FILTER_ENABLED_KEY=cacheScope(API_BASE,API_TOKEN)+':release-filter-enabled:v1';
 const artistKey=(name:string)=>name.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
 let excludedArtists:string[]=[];
+let filterEnabled=true;
 try { const saved=JSON.parse(discoveryStorage?.getItem(EXCLUSIONS_KEY) || '[]'); if(Array.isArray(saved))excludedArtists=saved.filter(n=>typeof n==='string'); } catch {}
+try { const saved=discoveryStorage?.getItem(FILTER_ENABLED_KEY); if(saved!==null)filterEnabled=saved!=='0'; } catch {}
 export const releaseExclusions=()=>excludedArtists;
 export const isReleaseExcluded=(name:string)=>excludedArtists.some(n=>artistKey(n)===artistKey(name));
-const exclusionParams=()=>excludedArtists.length?'&exclude='+encodeURIComponent(JSON.stringify(excludedArtists)):'';
+export const releaseFilterEnabled=()=>filterEnabled;
+const activeExclusions=()=>filterEnabled?excludedArtists:[];
+const isReleaseFiltered=(name:string)=>activeExclusions().some(n=>artistKey(n)===artistKey(name));
+const exclusionParams=()=>activeExclusions().length?'&exclude='+encodeURIComponent(JSON.stringify(activeExclusions())):'';
+const applyReleaseFilter=(rows:Release[])=>rows.filter(r=>!isReleaseFiltered(r.artist));
+export function setReleaseFilterEnabled(enabled:boolean) {
+  filterEnabled=enabled;
+  discoveryStorage?.setItem(FILTER_ENABLED_KEY,enabled?'1':'0');
+  publish({rows:applyReleaseFilter(feed.rows),failed:[],error:undefined});
+  const {busy,error,...saved}=feed;saveReleaseFeed(saved);
+  void loadReleases(true);
+}
 export function setReleaseExcluded(name:string,excluded:boolean) {
   const next=excluded?[...excludedArtists.filter(n=>artistKey(n)!==artistKey(name)),name]:excludedArtists.filter(n=>artistKey(n)!==artistKey(name));
   discoveryStorage?.setItem(EXCLUSIONS_KEY,JSON.stringify(next));
   excludedArtists=next;
-  publish({rows:feed.rows.filter(r=>!isReleaseExcluded(r.artist)),failed:[],error:undefined});
+  publish({rows:applyReleaseFilter(feed.rows),failed:[],error:undefined});
   const {busy,error,...saved}=feed;saveReleaseFeed(saved);
-  void loadReleases();
+  void loadReleases(true);
 }
-export async function loadReleaseArtists():Promise<string[]> {
+export type ReleaseArtistList={artists:string[];baseCount:number;total:number;watchlist:string[];excluded:string[];recentDays:90|180;updatedAt?:string};
+export async function loadReleaseArtistList():Promise<ReleaseArtistList> {
   const result=await discoveryGet('/release-artists');
-  if(!Array.isArray(result.artists)||!result.artists.every(n=>typeof n==='string'))throw Error('Danh sách nghệ sĩ chưa hợp lệ.');
-  return result.artists;
+  if(!Array.isArray(result.artists)||!result.artists.every((n:unknown)=>typeof n==='string'))throw Error('Danh sách nghệ sĩ chưa hợp lệ.');
+  const watchlist=Array.isArray(result.watchlist)?result.watchlist.filter((n:unknown)=>typeof n==='string'):[];
+  const excluded=Array.isArray(result.excluded)?result.excluded.filter((n:unknown)=>typeof n==='string'):[];
+  return {artists:result.artists,baseCount:Number(result.baseCount)||result.artists.length-watchlist.length,total:Number(result.total)||result.artists.length,watchlist,excluded,recentDays:Number(result.recentDays)===180?180:90,updatedAt:typeof result.updatedAt==='string'?result.updatedAt:undefined};
+}
+export async function loadReleaseArtists():Promise<string[]> { return (await loadReleaseArtistList()).artists; }
+export type ReleaseScanSettings={watchlist:string[];excluded:string[];recentDays?:90|180;updatedAt?:string};
+const settingsApiBase=()=>BROWSER_PREVIEW && import.meta.env.DEV ? '/__api' : API_BASE;
+export async function loadReleaseScanSettings():Promise<ReleaseScanSettings>{
+  const response=await fetch(settingsApiBase()+'/settings/release-scan',{headers:{Authorization:'Bearer '+API_TOKEN}});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new DiscoveryError(data.error || 'Chưa tải được cấu hình quét.');
+  const settings=data.settings || {};
+  return {watchlist:Array.isArray(settings.watchlist)?settings.watchlist.filter((n:unknown)=>typeof n==='string'):[],excluded:Array.isArray(settings.excluded)?settings.excluded.filter((n:unknown)=>typeof n==='string'):[],recentDays:Number(settings.recentDays)===180?180:90,updatedAt:typeof settings.updatedAt==='string'?settings.updatedAt:undefined};
+}
+export async function saveReleaseScanSettings(settings:ReleaseScanSettings):Promise<ReleaseScanSettings>{
+  const response=await fetch(settingsApiBase()+'/settings/release-scan',{method:'POST',headers:{Authorization:'Bearer '+API_TOKEN,'content-type':'application/json'},body:JSON.stringify(settings)});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new DiscoveryError(data.error==='unauthorized'?'Token hiện tại chưa có quyền lưu watchlist server.':data.error || 'Chưa lưu được cấu hình quét.');
+  const saved=data.settings || {},recentDays=Number(saved.recentDays)===180?180:90;
+  publish({recentDays});
+  void loadReleases(true);
+  return {watchlist:Array.isArray(saved.watchlist)?saved.watchlist.filter((n:unknown)=>typeof n==='string'):[],excluded:Array.isArray(saved.excluded)?saved.excluded.filter((n:unknown)=>typeof n==='string'):[],recentDays,updatedAt:typeof saved.updatedAt==='string'?saved.updatedAt:undefined};
 }
 
 export type Lyrics = { status: 'found' | 'not_found' | 'instrumental'; text?: string; source: string };
@@ -169,9 +206,9 @@ export function releasePhase(date: string, today: string): 'recent' | 'upcoming'
   const first = date.length === 4 ? date + '-01-01' : date.length === 7 ? date + '-01' : date;
   return last <= today ? 'recent' : first > today ? 'upcoming' : 'unknown';
 }
-export function releaseInWindow(date: string, mode: string, today: string) {
+export function releaseInWindow(date: string, mode: string, today: string, recentDays=90) {
   if (releasePhase(date,today) !== mode) return false;
-  const start = new Date(Date.parse(today+'T00:00:00Z')-90*86400000).toISOString().slice(0,10);
+  const start = new Date(Date.parse(today+'T00:00:00Z')-Math.max(1,Math.min(180,recentDays))*86400000).toISOString().slice(0,10);
   const end = (Number(today.slice(0,4))+1)+today.slice(4);
   const last = date.length===4 ? date+'-12-31' : date.length===7 ? date+'-'+new Date(Date.UTC(Number(date.slice(0,4)),Number(date.slice(5,7)),0)).getUTCDate() : date;
   const first = date.length===4 ? date+'-01-01' : date.length===7 ? date+'-01' : date;
@@ -191,15 +228,16 @@ export function releaseGroup(date: string, mode: string, today: string) {
 }
 
 type FailedReleasePage={cursor:string;source:string;retryAfter:number};
-type Feed = { failed:FailedReleasePage[]; rows: Release[]; checked: number; total: number; next: string | null; asOf: string; unverified: number; busy: boolean; error?: DiscoveryError };
+export type ReleaseScanInfo={cycleStartedAt?:string;updatedAt?:string;completedAt?:string;cursor?:string|null};
+type Feed = { failed:FailedReleasePage[]; rows: Release[]; checked: number; total: number; next: string | null; asOf: string; unverified: number; recentDays:90|180; scan?: ReleaseScanInfo|null; busy: boolean; error?: DiscoveryError };
 const CACHE = 'discovery:releases:v6';
 // Keep the release list separately so song/lyrics caches cannot evict it.
 const releaseCache = new LastGoodStore(cacheScope(API_BASE, API_TOKEN) + ':release-feed', discoveryStorage, 500000);
 const cached = releaseCache.get(CACHE) || discoveryCache.get(CACHE);
 let hasSavedReleaseFeed = Array.isArray(cached?.data?.rows);
 let feed: Feed = hasSavedReleaseFeed
-  ? { ...cached!.data, rows:mergeReleases(cached!.data.rows).filter(r=>!isReleaseExcluded(r.artist)), failed:[], next:null, busy: false }
-  : { failed:[], rows: [], checked: 0, total: 0, next: null, asOf: vnDate(), unverified: 0, busy: false };
+  ? { ...cached!.data, rows:applyReleaseFilter(mergeReleases(cached!.data.rows)), failed:[], next:null, recentDays:Number(cached!.data.recentDays)===180?180:90, busy: false }
+  : { failed:[], rows: [], checked: 0, total: 0, next: null, asOf: vnDate(), unverified: 0, recentDays:90, scan:null, busy: false };
 function saveReleaseFeed(snapshot: Omit<Feed, 'busy' | 'error'>) {
   hasSavedReleaseFeed = true;
   releaseCache.set(CACHE, snapshot);
@@ -215,8 +253,9 @@ function restoreServerReleases() {
   if(snapshotPending)return snapshotPending;
   snapshotPending=discoveryGet('/upcoming?snapshot=1'+exclusionParams()).then(result=>{
     if(!Array.isArray(result.rows) || !Number.isFinite(result.checked) || !Number.isFinite(result.total))throw Error('Invalid release snapshot');
-    publish({rows:mergeReleases([...feed.rows,...result.rows]).filter(r=>!isReleaseExcluded(r.artist)),checked:result.checked,total:result.total,
-      next:null,asOf:typeof result.asOf==='string'?result.asOf:vnDate(),failed:[],unverified:Number(result.unverified)||0});
+    publish({rows:applyReleaseFilter(mergeReleases([...feed.rows,...result.rows])),checked:result.checked,total:result.total,
+      next:null,asOf:typeof result.asOf==='string'?result.asOf:vnDate(),failed:[],unverified:Number(result.unverified)||0,recentDays:result.recentDays==null?feed.recentDays:Number(result.recentDays)===180?180:90,
+      scan:result.scan&&typeof result.scan==='object'?result.scan:null});
     const {busy,error,...saved}=feed;saveReleaseFeed(saved);
   }).finally(()=>{snapshotPending=undefined;});
   return snapshotPending;
@@ -229,6 +268,13 @@ export function rememberReleaseAlbum(release:Release) {
 export function findReleaseAlbum(artist:string,title:string):Release|undefined {
   return feed.rows.find(r=>r.artist===artist && r.title===title)
     || discoveryCache.get(releaseAlbumCacheKey(artist,title))?.data;
+}
+
+export function releaseScanLabel(scan?:ReleaseScanInfo|null) {
+  const value=scan?.completedAt || scan?.updatedAt || scan?.cycleStartedAt;
+  if(!value)return '';
+  const prefix=scan?.completedAt ? 'Cập nhật' : scan?.updatedAt ? 'Đang quét, cập nhật' : 'Bắt đầu quét';
+  return `${prefix} ${ago(value)} (${hhmmdm(value)})`;
 }
 export const releaseSnapshot = () => feed;
 export const subscribeReleases = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
@@ -263,7 +309,7 @@ export async function loadSimilarTracks(id: string, signal: AbortSignal): Promis
         && (r.libraryTrackId == null || /^TR\d+$/.test(r.libraryTrackId))
         && [r.scrobbles, r.listeners, r.duration_s].every(n => n == null || Number.isSafeInteger(n) && n >= 0)
         && (r.album == null || typeof r.album === 'string')
-        && (r.image == null || (() => { try { const image = new URL(r.image); return image.protocol === 'https:' && ['lastfm.freetls.fastly.net', 'userserve-ak.last.fm'].includes(image.hostname) && !image.username && !image.password && !image.port; } catch { return false; } })())
+        && (r.image == null || (() => { try { const image = new URL(r.image); return image.protocol === 'https:' && ['lastfm.freetls.fastly.net', 'lastfm-img.freetls.fastly.net', 'userserve-ak.last.fm'].includes(image.hostname) && !image.username && !image.password && !image.port; } catch { return false; } })())
         && url.protocol === 'https:' && ['last.fm', 'www.last.fm'].includes(url.hostname) && !url.username && !url.password && !url.port;
     } catch { return false; }
   })) throw Error('Invalid similar tracks');
@@ -283,7 +329,7 @@ export async function loadSimilarAlbums(artist: string, title: string, signal?: 
       const url = new URL(r.url);
       return typeof r.title === 'string' && typeof r.artist === 'string' && Number.isFinite(r.match)
         && [r.scrobbles, r.listeners].every(n => n == null || Number.isSafeInteger(n) && n >= 0)
-        && (r.image == null || (() => { try { const image = new URL(r.image); return image.protocol === 'https:' && ['lastfm.freetls.fastly.net', 'userserve-ak.last.fm'].includes(image.hostname) && !image.username && !image.password && !image.port; } catch { return false; } })())
+        && (r.image == null || (() => { try { const image = new URL(r.image); return image.protocol === 'https:' && ['lastfm.freetls.fastly.net', 'lastfm-img.freetls.fastly.net', 'userserve-ak.last.fm'].includes(image.hostname) && !image.username && !image.password && !image.port; } catch { return false; } })())
         && url.protocol === 'https:' && ['last.fm', 'www.last.fm'].includes(url.hostname) && !url.username && !url.password && !url.port;
     } catch { return false; }
   })) throw new DiscoveryError('Chưa tải được album tương tự.');

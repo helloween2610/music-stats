@@ -4,11 +4,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { build } from 'esbuild';
 
 const built = await build({
-  stdin: { contents: `export { songRankTimeline, songRankColor, ranksWithHistoricalGaps } from './src/lib/song-rank-history'; export { parentPage, rememberParent } from './src/lib/navigation'; export { newAdditions } from '../../server/src/newAdditions'; export { monthWeeks, stackMonthWeeks, MonthWeeksChart } from './src/lib/month-weeks'; export { createElement } from 'react'; export { renderToStaticMarkup } from 'react-dom/server'; export { RecentScreen, ArtistsAllScreen, PeriodTopScreen, Top100Screen, TrendScreen, OverviewScreen } from './src/screens/main'; export { periodRankHistory, rankCheckpoints } from '../../server/src/periodHistory'; export { periodSongRank } from '../../server/src/periodRank'; export { dailyThisWeek, hourlyToday } from '../../server/src/today'; export { overview, overviewRange } from '../../server/src/overview'; export { buildVM } from './src/vm'; export { BASE, TABS, pathOf } from './src/state'; export { invalidate } from './src/lib/api'; export * from './src/lib/list-preferences';`, resolveDir: process.cwd(), loader: 'ts' },
+  stdin: { contents: `export { songRankTimeline, songRankColor, ranksWithHistoricalGaps } from './src/lib/song-rank-history'; export { parentPage, rememberParent } from './src/lib/navigation'; export { newAdditions } from '../../server/src/newAdditions'; export { monthWeeks, stackMonthWeeks, MonthWeeksChart } from './src/lib/month-weeks'; export { vnHour, vnWeekdayIndex } from './src/lib/fmt'; export { createElement } from 'react'; export { renderToStaticMarkup } from 'react-dom/server'; export { RecentScreen, ArtistsAllScreen, PeriodTopScreen, Top100Screen, TrendScreen, OverviewScreen } from './src/screens/main'; export { periodRankHistory, rankCheckpoints } from '../../server/src/periodHistory'; export { periodSongRank } from '../../server/src/periodRank'; export { dailyThisWeek, hourlyToday } from '../../server/src/today'; export { overview, overviewRange } from '../../server/src/overview'; export { buildVM } from './src/vm'; export { BASE, TABS, pathOf } from './src/state'; export { invalidate } from './src/lib/api'; export * from './src/lib/list-preferences';`, resolveDir: process.cwd(), loader: 'ts' },
   bundle:true, write:false, format:'esm', platform:'browser',
   define:{'import.meta.env':'{}','process.env.NODE_ENV':'"production"'},
 });
-globalThis.window = {localStorage:{getItem:()=>null,setItem:()=>{}}};
+globalThis.window = {location:{pathname:'/',search:''},localStorage:{getItem:()=>null,setItem:()=>{}}};
 const app = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].text).toString('base64'));
 
 function fixture() {
@@ -30,6 +30,12 @@ function fixture() {
   }};
   return {env,db,calls};
 }
+
+test('monthly overview defaults use the current Vietnam weekday and hour', () => {
+  const now = Date.parse('2026-10-05T18:30:00Z'); // 01:30 Tuesday in Vietnam.
+  assert.equal(app.vnWeekdayIndex(now), 1);
+  assert.equal(app.vnHour(now), 1);
+});
 
 test('current week starts Monday across month and year boundaries, including Sunday', () => {
   assert.deepEqual(app.overviewRange('week','2026-10-02'),{from:'2026-09-28',to:'2026-10-02'});

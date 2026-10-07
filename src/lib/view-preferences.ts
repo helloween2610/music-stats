@@ -12,7 +12,7 @@ const KEY='music-stats:view-preferences:v1';
 const choices:Record<string,readonly string[]>={
   sort:['Giờ nghe','Điểm','Lượt','Lịch sử'], periodSort:['Giờ nghe','Điểm All time','Lượt','Lịch sử'],
   albumSort:['Giờ nghe','Lượt','Lịch sử'], songView:['Danh sách','Lịch sử'],
-  scope:['Tháng','Tháng trước','Năm','All time'],releaseMode:['recent','upcoming'],
+  scope:['Tháng','Tháng trước','Năm','All time'],releaseMode:['recent','upcoming','settings'],
 };
 export function cleanView(value:unknown):Partial<ViewPreferences> {
   const out:Record<string,unknown>={};
