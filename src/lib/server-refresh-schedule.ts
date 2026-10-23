@@ -1,5 +1,5 @@
 // Share the worker's actual Vietnam-time sync schedule; refresh five minutes later.
-import {isSyncHour} from '../../../../server/src/schedule';
+import {isSyncHour} from '../../server/src/schedule';
 const HOUR=3600000, DELAY=5*60000;
 export function serverRefreshWindow(now:number) {
   const hour=Math.floor(now/HOUR)*HOUR;
