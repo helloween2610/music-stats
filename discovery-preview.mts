@@ -1,7 +1,7 @@
 import type { Plugin } from 'vite';
 import { readFileSync } from 'node:fs';
-import { discoveryRoute } from '../../server/src/discoveryRoute';
-import type { DiscoveryStore, Track } from '../../server/src/discovery';
+import { discoveryRoute } from './server/src/discoveryRoute';
+import type { DiscoveryStore, Track } from './server/src/discovery';
 
 // Only the new read-only features use a local service in preview. Existing app data
 // still comes from the configured production API. No cloud library job is resumed.

@@ -1,5 +1,5 @@
-import { mergeReleases, type Release } from '../../../../shared/releases';
-export type { Release } from '../../../../shared/releases';
+import { mergeReleases, type Release } from '../../shared/releases';
+export type { Release } from '../../shared/releases';
 import { API_BASE, API_TOKEN, BROWSER_PREVIEW } from '@/config';
 import { ago, hhmmdm } from '@/lib/fmt';
 import { LastGoodStore, cacheScope } from './last-good';

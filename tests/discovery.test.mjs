@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-const compiled = await build({stdin:{contents:`export * from '../../server/src/discovery'; export * from '../../shared/releases'; export * from '../../server/src/appleMusic'; export * from '../../server/src/albumTracks'; export * from '../../server/src/bandcamp'; export * from './src/lib/apple-music-opening'; export {releasePhase,releaseDate,releaseGroup,loadNowPlaying} from './src/lib/discovery';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env':'{}'}});
+const compiled = await build({stdin:{contents:`export * from './server/src/discovery'; export * from './shared/releases'; export * from './server/src/appleMusic'; export * from './server/src/albumTracks'; export * from './server/src/bandcamp'; export * from './src/lib/apple-music-opening'; export {releasePhase,releaseDate,releaseGroup,loadNowPlaying} from './src/lib/discovery';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env':'{}'}});
 globalThis.window={localStorage:{getItem:()=>null,setItem:()=>{}}};
 const app=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const track=(artist,duration,plays,extra={})=>({id:'TR1',title:'Song',album:'Known album',artist,duration_s:duration,plays,in_library:1,...extra});
