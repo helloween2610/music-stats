@@ -1,31 +1,24 @@
-import { useEffect, useState } from 'react';
-import { discoveryGet } from '@/lib/discovery';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { lastfmTrackRefreshSnapshot, loadLastfmTrack, subscribeLastfmTrackRefresh, type LastfmTrackStats } from '@/lib/discovery';
 import { LastfmListenRatio } from './lastfm-track-metrics';
 
-type Stats = { status: 'found' | 'not_found'; listeners?: number; scrobbles?: number; updatedAt: string };
-const cache = new Map<string, { value: Stats; expires: number }>();
 export function LastfmMetadata({ trackId }: { trackId?: string }) {
-  const [data, setData] = useState<Stats | null>(null);
+  const [data, setData] = useState<LastfmTrackStats | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [retryAt, setRetryAt] = useState(0);
+  const refreshVersion = useSyncExternalStore(subscribeLastfmTrackRefresh, lastfmTrackRefreshSnapshot, lastfmTrackRefreshSnapshot);
   useEffect(() => {
     setData(null); setError('');
     if (!trackId || !/^TR\d+$/.test(trackId)) return;
-    const hit = cache.get(trackId);
-    if (hit && hit.expires > Date.now()) { setData(hit.value); return; }
     const controller = new AbortController();
-    discoveryGet('/lastfm/' + encodeURIComponent(trackId), controller.signal).then(value => {
-      if (controller.signal.aborted) return;
-      if (!['found', 'not_found'].includes(value.status) || !Number.isFinite(Date.parse(value.updatedAt)) ||
-        (value.status === 'found' && ![value.listeners, value.scrobbles].every(n => Number.isSafeInteger(n) && n >= 0))) throw Error('Last.fm trả dữ liệu chưa hợp lệ.');
-      cache.set(trackId, { value, expires: Date.now() + (value.status === 'found' ? 86400 : 3600) * 1000 });
-      setData(value);
+    loadLastfmTrack({artist:'',title:'',trackId}, controller.signal).then(value => {
+      if (!controller.signal.aborted) setData(value);
     }).catch(e => {
       if (!controller.signal.aborted) { setError(e.message || 'Chưa tải được dữ liệu.'); setRetryAt(e.retryAt || Date.now() + 30000); }
     });
     return () => controller.abort();
-  }, [trackId, attempt]);
+  }, [trackId, attempt, refreshVersion]);
   if (!trackId || !/^TR\d+$/.test(trackId)) return null;
   const metric = (label: string, value?: number, showRatio=false) => <div className="stat-box">
     <div className="num lastfm-stat-value" style={{ fontSize: 20, fontWeight: 700, lineHeight: 1 }}>

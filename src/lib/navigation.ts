@@ -8,7 +8,7 @@ export function parentPage(page: PageTarget, tab: number, parents: PageParents):
   switch (page.screen) {
     case "recent": return { screen: "today" };
     case "periodTop": return parents[pathOf(page.screen,page.id)] || { screen: page.id?.startsWith("monthSongs~") ? "today" : "overview" };
-    case "top100": case "artistsAll": return parents[pathOf(page.screen,page.id)] || { screen: "overview" };
+    case "top100": case "artistsAll": case "topPlaylists": return parents[pathOf(page.screen,page.id)] || { screen: "overview" };
     case "rising": return { screen: "trend" };
     case "playlist": return parents[pathOf(page.screen,page.id)] || { screen: "playlists" };
     case "playlists": case "rules": case "unmatched": return { screen: "library" };
@@ -18,7 +18,7 @@ export function parentPage(page: PageTarget, tab: number, parents: PageParents):
 }
 
 export function rememberParent(from: PageTarget, to: PageTarget, tab: number, parents: PageParents): PageParents {
-  if (WEB_OVERVIEW_SCOPES[from.screen] && ["periodTop","top100","artistsAll"].includes(to.screen)) return {...parents,[pathOf(to.screen,to.id)]:from};
+  if (WEB_OVERVIEW_SCOPES[from.screen] && ["periodTop","top100","artistsAll","topPlaylists"].includes(to.screen)) return {...parents,[pathOf(to.screen,to.id)]:from};
   if (to.screen !== "playlist" && to.screen !== "song" && to.screen !== "artist" && to.screen !== "album") return parents;
   const detail = ["song", "artist", "album"].includes(from.screen);
   let parent = from.screen === "album" && to.screen === "song" ? from : detail ? parentPage(from, tab, parents) : from;

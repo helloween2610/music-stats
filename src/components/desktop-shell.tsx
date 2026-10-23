@@ -20,10 +20,11 @@ const links: { screen: Screen; id?: string; label: string; path: string }[] = [
   {screen:'top100', label:'Top 100 Song', path:'M9 18V5l10-2v13M9 18a3 2 0 1 1-3-2c2 0 3 1 3 2Zm10-2a3 2 0 1 1-3-2c2 0 3 1 3 2ZM9 9l10-2'},
   {screen:'periodTop', id:'albums~all', label:'Top 24 Album', path:'M4 3h16v18H4ZM16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM12 12h.01'},
   {screen:'artistsAll', label:'Top 32 Artist', path:'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a8 8 0 0 1 16 0v2'},
+  {screen:'topPlaylists', label:'Top Playlist', path:'M4 4h6v6H4ZM14 4h6v6h-6ZM4 14h6v6H4ZM14 14h6v6h-6Z'},
   {screen:'releaseYears', label:'Năm phát hành', path:'M4 20h16M6 17v-5m6 5V5m6 12V9'},
   {screen:'releases', label:'Phát hành', path:'M4 5h16v16H4ZM8 3v4m8-4v4M4 11h16m-12 4h3m2 3h3'},
   {screen:'playlists', label:'Playlist', path:'M3 5h12M3 10h12M3 15h7m8-5v9m0-9 4 1m-4 8a3 2 0 1 1-3-2c2 0 3 1 3 2'},
-  {screen:'library', label:'Thư viện', path:'M3 4h4v17H3ZM11 4h4v17h-4Zm7 0 3 17'},
+  {screen:'settings', label:'Cài đặt', path:'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04-1.7 2.95-.06-.02a1.8 1.8 0 0 0-2.04.28l-.04.04-3.4-1.96a1.8 1.8 0 0 0-1.12 0l-3.4 1.96-.04-.04a1.8 1.8 0 0 0-2.04-.28l-.06.02-1.7-2.95.04-.04A1.8 1.8 0 0 0 4.6 15v-4a1.8 1.8 0 0 0-.36-1.98L4.2 8.98l1.7-2.95.06.02a1.8 1.8 0 0 0 2.04-.28l.04-.04 3.4 1.96c.36-.12.76-.12 1.12 0l3.4-1.96.04.04a1.8 1.8 0 0 0 2.04.28l.06-.02 1.7 2.95-.04.04A1.8 1.8 0 0 0 19.4 11v4Z'},
 ];
 
 export function DesktopNavigation({screen,id,open,today}:{screen:Screen;id?:string|null;open:(s:Screen,id?:string)=>void;today:string}) {

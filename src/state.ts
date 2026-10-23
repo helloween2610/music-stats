@@ -7,8 +7,9 @@ import type { PageParents } from "@/lib/navigation";
 
 export type Screen =
   | "recent" | "periodTop" | "today" | "top100" | "artistsAll" | "trend" | "overview"
-  | "playlists" | "playlist" | "releases" | "library" | "unmatched" | "rules" | "rising" | "song" | "artist" | "album"
-  | "notifications" | "releaseYears" | "overviewLastMonth" | "overviewThisMonth" | "overviewThisYear" | "overviewAllTime";
+  | "playlists" | "playlist" | "topPlaylists" | "releases" | "settings" | "library" | "unmatched" | "rules" | "rising" | "song" | "artist" | "album"
+  | "notifications" | "releaseYears" | "overviewLastMonth" | "overviewThisMonth" | "overviewThisYear" | "overviewAllTime"
+  | "player" | "widgetPreview";
 
 export const WEB_OVERVIEW_SCOPES: Partial<Record<Screen,string>> = {
   overviewLastMonth: "Tháng trước", overviewThisMonth: "Tháng",
@@ -16,15 +17,17 @@ export const WEB_OVERVIEW_SCOPES: Partial<Record<Screen,string>> = {
 };
 
 // Tab Thống kê mở trực tiếp Tổng quan.
-export const TABS: Screen[] = ["today", "trend", "overview", "releases", "library"];
-export const TAB_LABELS = ["Hôm nay", "Diễn biến", "Thống kê", "Sắp ra mắt", "Thư viện"];
+export const TABS: Screen[] = ["today", "trend", "overview", "releases", "playlists", "settings"];
+export const TAB_LABELS = ["Hôm nay", "Diễn biến", "Tổng quan", "Sắp ra mắt", "Playlist", "Cài đặt"];
 export const tabOf = (s: Screen) => TABS.indexOf(s);
-export const TAB_ICONS = ["zi-calendar", "zi-poll", "zi-list-1", "zi-clock-1", "zi-favorite-list"] as const;
+export const TAB_ICONS = ["zi-calendar", "zi-poll", "zi-more-grid", "zi-gallery", "zi-favorite-list", "zi-setting"] as const;
 export const TITLE: Record<Screen, string> = {
-  album: "Album", recent: "Vừa nghe", playlists: "Danh sách playlist", playlist: "Playlist",
+  album: "Album", recent: "Vừa nghe", playlists: "Danh sách playlist", playlist: "Playlist", topPlaylists: "Top Playlists",
   periodTop: "Top theo kỳ", today: "Hôm nay", top100: "Top 100 All time", artistsAll: "Nghệ sĩ All time",
-  trend: "Diễn biến", overview: "Thống kê", releases: "Sắp ra mắt", library: "Thư viện", unmatched: "Bài chưa khớp", rules: "Quy tắc thay thế", rising: "Bài đang lên hạng", song: "Bài hát", artist: "Nghệ sĩ",
+  trend: "Diễn biến", overview: "Tổng quan", releases: "Sắp ra mắt", settings: "Cài đặt", library: "Cài đặt", unmatched: "Bài chưa khớp", rules: "Quy tắc thay thế", rising: "Bài đang lên hạng", song: "Bài hát", artist: "Nghệ sĩ",
   notifications: "Thông báo", releaseYears: "Năm phát hành",
+  player: "Đang phát",
+  widgetPreview: "Widget iPhone",
   overviewLastMonth: "Last Month", overviewThisMonth: "This Month", overviewThisYear: "This Year", overviewAllTime: "All Time",
 };
 
@@ -43,7 +46,9 @@ export const pathOf = (screen: Screen, id?: string | null) => {
     case "releases": return "/releases";
     case "playlists": return id ? "/playlists/" + encodeURIComponent(id) : "/playlists";
     case "playlist": return "/playlist/" + encodeURIComponent(id || "");
-    case "library": return "/library";
+    case "topPlaylists": return "/top-playlists";
+    case "settings": return "/settings";
+    case "library": return "/settings";
     case "top100": return "/top100";
     case "artistsAll": return "/artists";
     case "unmatched": return "/unmatched";
@@ -53,15 +58,20 @@ export const pathOf = (screen: Screen, id?: string | null) => {
     case "album": return "/album/" + encodeURIComponent(id || "");
     case "artist": return "/artist/" + encodeURIComponent(id || "");
     case "notifications": return "/notifications";
+    case "player": return "/player";
+    case "widgetPreview": return "/widget-preview";
   }
 };
 
 export type UI = {
   views: SavedViews;
   playlistSort: string;
+  playlistListSort: string;
   playlistFolder: string;
   listLimit: number;
   releaseMode: string;
+  trendMode: "rising" | "Tháng trước" | "Tháng" | "Năm";
+  trendAsOf: string;
   rankFocus?: {key:string;kind:'song'|'artist';label:string;request:number};
   periodListSize: PeriodListSize;
   pageParents: PageParents;
@@ -99,7 +109,7 @@ export type UI = {
 };
 
 export const BASE: UI = {
-  views: readViews(), playlistSort: "Thứ tự gốc", playlistFolder: "Tất cả", listLimit: 50, releaseMode: "recent",
+  views: readViews(), playlistSort: "Thứ tự gốc", playlistListSort: "Thứ tự gốc", playlistFolder: "Tất cả", listLimit: 50, releaseMode: "recent", trendMode: "rising", trendAsOf: "",
   periodListSize: readPeriodListSize(),
   pageParents: {},
   artistFilter: "Tất cả", artistRankAsOf: "", songRankAsOf: "", albumFilter: "Tất cả", albumRankAsOf: "", albumSort: "Giờ nghe",

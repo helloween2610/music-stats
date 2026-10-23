@@ -7,6 +7,25 @@ let discoveryStorage: Storage | undefined;
 try { discoveryStorage = window.localStorage; } catch {}
 // Independent budget: large chart caches must not evict a partially loaded release feed.
 const discoveryCache = new LastGoodStore(cacheScope(API_BASE, API_TOKEN) + ':discovery', discoveryStorage, 500000);
+const lastfmTrackCache = new LastGoodStore(cacheScope(API_BASE, API_TOKEN) + ':lastfm-track-hard-v1', discoveryStorage, 2000000);
+let lastfmTrackRefreshVersion=0;
+const lastfmTrackListeners=new Set<()=>void>();
+export const subscribeLastfmTrackRefresh=(listener:()=>void)=>{lastfmTrackListeners.add(listener);return()=>{lastfmTrackListeners.delete(listener);};};
+export const lastfmTrackRefreshSnapshot=()=>lastfmTrackRefreshVersion;
+export type LastfmTrackQuery={artist:string;title:string;trackId?:string};
+const lastfmTrackPath=(query:LastfmTrackQuery)=>{
+  const params=new URLSearchParams({artist:query.artist.trim(),title:query.title.trim()});
+  return query.trackId && /^TR\d+$/.test(query.trackId) ? '/lastfm/'+query.trackId : '/lastfm?'+params;
+};
+const lastfmTrackKey=(query:LastfmTrackQuery)=>'discovery:lastfm-track:v1:'+lastfmTrackPath(query);
+export function refreshLastfmTrackStats(queries?:LastfmTrackQuery[]) {
+  const keys=queries?.map(lastfmTrackKey).filter(Boolean);
+  const shouldRemove=(key:string)=>keys?.length ? keys.includes(key) : key.startsWith('discovery:lastfm-track:v1:');
+  lastfmTrackCache.removeWhere(shouldRemove);
+  discoveryCache.removeWhere(shouldRemove);
+  lastfmTrackRefreshVersion++;
+  lastfmTrackListeners.forEach(listener=>listener());
+}
 
 const EXCLUSIONS_KEY=cacheScope(API_BASE,API_TOKEN)+':release-exclusions:v1';
 const FILTER_ENABLED_KEY=cacheScope(API_BASE,API_TOKEN)+':release-filter-enabled:v1';
@@ -65,9 +84,37 @@ export async function saveReleaseScanSettings(settings:ReleaseScanSettings):Prom
   return {watchlist:Array.isArray(saved.watchlist)?saved.watchlist.filter((n:unknown)=>typeof n==='string'):[],excluded:Array.isArray(saved.excluded)?saved.excluded.filter((n:unknown)=>typeof n==='string'):[],recentDays,updatedAt:typeof saved.updatedAt==='string'?saved.updatedAt:undefined};
 }
 
+export type AlbumRecommendationSeed={artist:string;title:string;albumId?:string;hours:number;plays:number};
+export type AlbumRecommendation={id:string;title:string;artist:string;date?:string;type:string;url:string;cover:string;score:number;matchedTags:string[];similarTo:AlbumRecommendationSeed;source:'Last.fm'|'MusicBrainz'};
+export async function loadAlbumRecommendations(signal?:AbortSignal, force=false):Promise<{seeds:AlbumRecommendationSeed[];rows:AlbumRecommendation[];source:string}> {
+  const key='discovery:album-recommendations:v5', saved=discoveryCache.get(key);
+  if(!force && saved && Date.now()-saved.at<6*3600*1000)return saved.data;
+  if(force)discoveryCache.removeWhere(path=>path===key);
+  const data=await discoveryGet('/album-recommendations' + (force ? '?refresh=1' : ''),signal);
+  const validSeed=(seed:any)=>seed && typeof seed.artist==='string' && typeof seed.title==='string' && Number.isFinite(seed.hours) && Number.isFinite(seed.plays);
+  const validRow=(row:any)=>{
+    try {
+      const url=new URL(row.url), cover=row.cover?new URL(row.cover):null;
+      const allowedUrl = row.source === 'Last.fm'
+        ? ['last.fm','www.last.fm'].includes(url.hostname)
+        : url.hostname === 'musicbrainz.org';
+      const allowedCover = !cover || ['coverartarchive.org','lastfm.freetls.fastly.net','lastfm-img.freetls.fastly.net','userserve-ak.last.fm'].includes(cover.hostname);
+      return typeof row.id==='string' && typeof row.title==='string' && typeof row.artist==='string' && typeof row.type==='string'
+        && (row.source==='Last.fm' || row.source==='MusicBrainz')
+        && Number.isFinite(row.score) && Array.isArray(row.matchedTags) && row.matchedTags.every((tag:unknown)=>typeof tag==='string')
+        && validSeed(row.similarTo) && url.protocol==='https:' && allowedUrl
+        && (!cover || cover.protocol==='https:' && allowedCover);
+    } catch { return false; }
+  };
+  if(!Array.isArray(data.seeds) || !data.seeds.every(validSeed) || !Array.isArray(data.rows) || !data.rows.every(validRow))throw new DiscoveryError('Danh sách album gợi ý chưa hợp lệ.');
+  discoveryCache.set(key,data);
+  return data;
+}
+
 export type Lyrics = { status: 'found' | 'not_found' | 'instrumental'; text?: string; source: string };
 export type AppleAlbum = { status: 'found' | 'search'; url: string; reason?: 'unavailable' | 'not_found'; releaseYear?:number };
 export type AppleDetailQuery = {kind:'song'|'artist'|'album'; artist:string; title?:string; album?:string; releaseId?:string; trackId?:string};
+export type ApplePlaylistSong = {status:'found';url:string;storeId:string;title:string;artist:string;album:string;match:'exact'|'version'};
 export function appleDetailSearch(q: AppleDetailQuery): string {
   return 'https://music.apple.com/vn/search?' + new URLSearchParams({term:[q.artist,q.kind !== 'artist' ? q.title : ''].filter(Boolean).join(' ')});
 }
@@ -97,7 +144,7 @@ export async function loadAppleDetail(q: AppleDetailQuery): Promise<AppleAlbum> 
   const params = new URLSearchParams({kind:q.kind,artist:q.artist});
   if (q.kind !== 'artist') { if(q.title)params.set('title',q.title); if(q.album)params.set('album',q.album); }
   if (q.kind === 'album' && q.releaseId) params.set('id',q.releaseId);
-  if(q.kind==='song' && /^TR\d+$/.test(q.trackId || ''))params.set('library','1');
+  if(q.kind==='song' && /^TR\d+$/.test(q.trackId || '')){params.set('library','1');params.set('trackId',q.trackId!);}
   const key = 'discovery:apple-detail:v3:' + params;
   const saved = discoveryCache.get(key);
   if (saved?.data.status==='found' && Date.now()-saved.at < 30*86400*1000) return saved.data;
@@ -112,6 +159,24 @@ export async function loadAppleDetail(q: AppleDetailQuery): Promise<AppleAlbum> 
   }).finally(()=>{if(detailPending.get(key)===request)detailPending.delete(key);});
   detailQueue=request.catch(()=>{});
   detailPending.set(key,request); return request;
+}
+export async function loadApplePlaylistSong(artist:string,title:string):Promise<ApplePlaylistSong>{
+  const params=new URLSearchParams({artist,title});
+  const data=await discoveryGet('/apple-playlist-song?'+params);
+  const url=new URL(data.url);
+  if(data.status!=='found' || !/^\d+$/.test(data.storeId || '') || typeof data.title!=='string' || typeof data.artist!=='string' || typeof data.album!=='string'
+    || !['exact','version'].includes(data.match) || url.protocol!=='https:' || url.hostname!=='music.apple.com' || url.username || url.password || url.port
+    || url.searchParams.get('i')!==data.storeId)throw new DiscoveryError(data.error || 'Chưa tìm thấy đúng bài này trên Apple Music.');
+  return data as ApplePlaylistSong;
+}
+export async function loadApplePlaylistSongLine(raw:string):Promise<ApplePlaylistSong>{
+  const params=new URLSearchParams({raw});
+  const data=await discoveryGet('/apple-playlist-song?'+params);
+  const url=new URL(data.url);
+  if(data.status!=='found' || !/^\d+$/.test(data.storeId || '') || typeof data.title!=='string' || typeof data.artist!=='string' || typeof data.album!=='string'
+    || !['exact','version'].includes(data.match) || url.protocol!=='https:' || url.hostname!=='music.apple.com' || url.username || url.password || url.port
+    || url.searchParams.get('i')!==data.storeId)throw new DiscoveryError(data.error || 'Chưa nhận dạng được tên bài và nghệ sĩ.');
+  return data as ApplePlaylistSong;
 }
 export async function loadAppleAlbum(release: Release): Promise<AppleAlbum> {
   const key = 'discovery:apple:v2:' + JSON.stringify([release.id, release.artist, release.title]);
@@ -129,11 +194,12 @@ export class DiscoveryError extends Error {
 export type LastfmTrackStats = {status:'found'|'not_found';scrobbles?:number;listeners?:number;updatedAt:string};
 let lastfmQueue:Promise<unknown>=Promise.resolve();
 let nextLastfmRequest=0;
-export function loadLastfmTrack(query:{artist:string;title:string;trackId?:string},signal:AbortSignal):Promise<LastfmTrackStats> {
-  const params=new URLSearchParams({artist:query.artist.trim(),title:query.title.trim()});
-  const path=query.trackId && /^TR\d+$/.test(query.trackId) ? '/lastfm/'+query.trackId : '/lastfm?'+params;
-  const key='discovery:lastfm-track:v1:'+path;
+export function loadLastfmTrack(query:LastfmTrackQuery,signal:AbortSignal):Promise<LastfmTrackStats> {
+  const path=lastfmTrackPath(query);
+  const key=lastfmTrackKey(query);
   const cached=()=>{
+    const hard=lastfmTrackCache.get(key);
+    if(hard?.data.status==='found')return hard.data as LastfmTrackStats;
     const hit=discoveryCache.get(key);
     return hit && Date.now()-hit.at < (hit.data.status==='found'?86400:3600)*1000 ? hit.data as LastfmTrackStats : null;
   };
@@ -152,7 +218,8 @@ export function loadLastfmTrack(query:{artist:string;title:string;trackId?:strin
       const data=await discoveryGet(path,signal);
       if(!['found','not_found'].includes(data.status) || !Number.isFinite(Date.parse(data.updatedAt)) ||
         (data.status==='found' && ![data.scrobbles,data.listeners].every(n=>Number.isSafeInteger(n)&&n>=0))) throw Error('Invalid Last.fm counters');
-      discoveryCache.set(key,data);
+      if(data.status==='found')lastfmTrackCache.set(key,data);
+      else discoveryCache.set(key,data);
       return data as LastfmTrackStats;
     } catch(e) {
       if(e instanceof DiscoveryError)nextLastfmRequest=Math.max(nextLastfmRequest,e.retryAt);
@@ -177,12 +244,15 @@ export async function discoveryGet(path: string, signal?: AbortSignal) {
     const response = await fetch(base + path, {
       headers: { Authorization: 'Bearer ' + API_TOKEN }, signal: controller.signal,
     });
-    const data = await response.json();
+    const text = await response.text();
+    let data: any;
+    try { data = text ? JSON.parse(text) : null; }
+    catch { throw new DiscoveryError('Server trả về dữ liệu không hợp lệ. Hãy thử lại sau.'); }
     if (!response.ok) throw new DiscoveryError(data.error || 'Chưa tải được dữ liệu.', Date.now() + Math.max(30, Number(response.headers.get('Retry-After')) || 30) * 1000);
     return data;
   } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
 }
-export type NowPlayingTrack={title:string;artist:string;album?:string;image?:string;url?:string;libraryTrackId?:string;duration_s?:number;year?:number;date_added?:string;last_played?:string;my_rating?:number;plays?:number};
+export type NowPlayingTrack={title:string;artist:string;album?:string;image?:string;url?:string;libraryTrackId?:string;persistentId?:string;duration_s?:number;year?:number;date_added?:string;last_played?:string;my_rating?:number;plays?:number;allTimeRank?:number;allTimeChange?:number;allTimeComparison?:string};
 export async function loadNowPlaying(signal?:AbortSignal):Promise<NowPlayingTrack|null> {
   const mock=BROWSER_PREVIEW && new URLSearchParams(window.location.search).get('nowPlaying')==='mock';
   const data=await discoveryGet('/now-playing'+(mock?'?mock=1':''),signal);
@@ -262,12 +332,65 @@ function restoreServerReleases() {
 }
 const listeners = new Set<() => void>();
 const releaseAlbumCacheKey=(artist:string,title:string)=>'discovery:album:'+JSON.stringify([artist,title]);
+const releaseIdentityKey=(artist:string,title:string)=>JSON.stringify([artist,title].map(value=>value.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'')));
+export type SavedReleaseSource='other'|'recommend'|'playlistRecommend'|'recent'|'upcoming';
+export type SavedReleaseAlbum=Release & { savedSource?:SavedReleaseSource; savedAt?:string };
+const SAVED_RELEASES_KEY=cacheScope(API_BASE,API_TOKEN)+':saved-release-albums:v1';
+const SAVED_RELEASE_EXCLUDES_KEY=cacheScope(API_BASE,API_TOKEN)+':saved-release-excludes:v1';
+const savedReleaseListeners=new Set<()=>void>();
+const isSavedReleaseSource=(value:unknown):value is SavedReleaseSource=>['other','recommend','playlistRecommend','recent','upcoming'].includes(String(value));
+function isRelease(value:unknown):value is Release {
+  const row=value as Partial<Release>;
+  return !!row && typeof row==='object' && ['id','title','artist','date','type','url','cover'].every(key=>typeof (row as Record<string,unknown>)[key]==='string') && typeof row.owned==='boolean';
+}
+function readSavedReleaseAlbums():SavedReleaseAlbum[] {
+  try {
+    const saved=JSON.parse(discoveryStorage?.getItem(SAVED_RELEASES_KEY) || '[]');
+    return Array.isArray(saved) ? saved.filter(isRelease).map(row=>({
+      ...row,
+      savedSource:isSavedReleaseSource((row as SavedReleaseAlbum).savedSource)?(row as SavedReleaseAlbum).savedSource:'other',
+      savedAt:typeof (row as SavedReleaseAlbum).savedAt==='string'?(row as SavedReleaseAlbum).savedAt:undefined,
+    })) : [];
+  } catch { return []; }
+}
+let savedReleaseRows=readSavedReleaseAlbums();
+let savedReleaseExcludedKeys:string[]=[];
+try {
+  const saved=JSON.parse(discoveryStorage?.getItem(SAVED_RELEASE_EXCLUDES_KEY) || '[]');
+  if(Array.isArray(saved))savedReleaseExcludedKeys=saved.filter(key=>typeof key==='string');
+} catch {}
+function writeSavedReleaseAlbums() {
+  try { discoveryStorage?.setItem(SAVED_RELEASES_KEY,JSON.stringify(savedReleaseRows)); } catch {}
+  savedReleaseListeners.forEach(listener=>listener());
+}
+function writeSavedReleaseExcludes() {
+  try { discoveryStorage?.setItem(SAVED_RELEASE_EXCLUDES_KEY,JSON.stringify(savedReleaseExcludedKeys)); } catch {}
+  savedReleaseListeners.forEach(listener=>listener());
+}
 export function rememberReleaseAlbum(release:Release) {
   discoveryCache.set(releaseAlbumCacheKey(release.artist,release.title),release);
 }
 export function findReleaseAlbum(artist:string,title:string):Release|undefined {
   return feed.rows.find(r=>r.artist===artist && r.title===title)
+    || savedReleaseRows.find(r=>releaseIdentityKey(r.artist,r.title)===releaseIdentityKey(artist,title))
     || discoveryCache.get(releaseAlbumCacheKey(artist,title))?.data;
+}
+export const savedReleaseAlbums=()=>savedReleaseRows;
+export const savedReleaseExclusions=()=>savedReleaseExcludedKeys;
+export const subscribeSavedReleases=(listener:()=>void)=>{savedReleaseListeners.add(listener);return()=>{savedReleaseListeners.delete(listener);};};
+export const isReleaseSaved=(release:Pick<Release,'artist'|'title'>)=>savedReleaseRows.some(row=>releaseIdentityKey(row.artist,row.title)===releaseIdentityKey(release.artist,release.title));
+export const isSavedReleaseExcluded=(release:Pick<Release,'artist'|'title'>)=>savedReleaseExcludedKeys.includes(releaseIdentityKey(release.artist,release.title));
+export function setSavedReleaseExcluded(release:Pick<Release,'artist'|'title'>,excluded:boolean) {
+  const key=releaseIdentityKey(release.artist,release.title);
+  savedReleaseExcludedKeys=excluded?[key,...savedReleaseExcludedKeys.filter(item=>item!==key)]:savedReleaseExcludedKeys.filter(item=>item!==key);
+  writeSavedReleaseExcludes();
+}
+export function setReleaseSaved(release:Release,saved:boolean,source:SavedReleaseSource='other') {
+  const key=releaseIdentityKey(release.artist,release.title);
+  const existing=savedReleaseRows.filter(row=>releaseIdentityKey(row.artist,row.title)!==key);
+  savedReleaseRows=saved ? [{...release,savedSource:source,savedAt:new Date().toISOString()},...existing] : existing;
+  if(saved)rememberReleaseAlbum(release);
+  writeSavedReleaseAlbums();
 }
 
 export function releaseScanLabel(scan?:ReleaseScanInfo|null) {

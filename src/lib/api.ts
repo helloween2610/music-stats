@@ -10,6 +10,8 @@ let storage: Storage | undefined;
 try { storage = window.localStorage; } catch {}
 export const lastGood = new LastGoodStore(cacheScope(API_BASE, API_TOKEN), storage);
 
+const libraryMetadataStore = new LastGoodStore(cacheScope(API_BASE, API_TOKEN) + ':library-metadata', storage);
+
 export type Entry = {
   path: string;
   st: "loading" | "ok" | "err";
@@ -18,24 +20,37 @@ export type Entry = {
   code: string; // trường "error" của response lỗi, vd. "d1_daily_limit"
   at: number;
   dataAt: number; // thời điểm tải thành công gần nhất
+  generation?: string;
 };
 
 const RETRY_MS = 30000;
+export const CLIENT_CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const CACHE = new Map<string, Entry>();
+const FORCE_REFRESH = new Set<string>();
 const SUBS = new Set<() => void>();
 const notify = () => SUBS.forEach((f) => f());
 
 export function fetchJson(path: string, cacheOnly = false): Entry {
   const old = CACHE.get(path);
-  if (old && !(old.st === "err" && Date.now() - old.at > RETRY_MS)) return old;
-  const saved = lastGood.get(path);
+  if (old && (old.st === "loading" || old.st === "err" && Date.now() - old.at <= RETRY_MS
+    || old.st === "ok" && Date.now() - old.dataAt < CLIENT_CACHE_MAX_AGE_MS)) return old;
+  if (old) CACHE.delete(path);
+  const metadata = path.startsWith('/library/metadata?');
+  const saved = (metadata ? libraryMetadataStore : lastGood).get(path);
   const valid = saved && validResponse(path, saved.data) ? saved : undefined;
   if (cacheOnly && valid) {
-    const e: Entry = { path, st: "ok", data: valid.data, dataAt: valid.at, status: null, code: "", at: Date.now() };
+    FORCE_REFRESH.delete(path);
+    const e: Entry = { path, st: "ok", data: valid.data, dataAt: valid.at, generation: valid.generation, status: null, code: "", at: Date.now() };
     CACHE.set(path, e);
     return e;
   }
-  const e: Entry = { path, st: "loading", data: valid?.data ?? null, dataAt: valid?.at ?? 0, status: null, code: "", at: 0 };
+  const force = FORCE_REFRESH.delete(path);
+  if (valid && !force && Date.now() - valid.at < CLIENT_CACHE_MAX_AGE_MS) {
+    const e: Entry = { path, st: "ok", data: valid.data, dataAt: valid.at, generation: valid.generation, status: null, code: "", at: Date.now() };
+    CACHE.set(path, e);
+    return e;
+  }
+  const e: Entry = { path, st: "loading", data: valid?.data ?? null, dataAt: valid?.at ?? 0, generation: valid?.generation, status: null, code: "", at: 0 };
   CACHE.set(path, e);
   const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
   const to = setTimeout(() => ctl?.abort(), FETCH_TIMEOUT_MS);
@@ -55,16 +70,20 @@ export function fetchJson(path: string, cacheOnly = false): Entry {
         e.code = "invalid_data";
         throw new Error("Invalid server response");
       }
+      e.generation = r.headers.get("x-data-generation") || e.generation;
       return j;
     })
     .then(
       (d) => {
         if (CACHE.get(path) !== e) return; // Ignore a response invalidated during the request.
         e.st = "ok"; e.data = d; e.dataAt = Date.now();
-        lastGood.set(path, d, e.dataAt);
+        if (metadata) {
+          libraryMetadataStore.set(path, d, e.dataAt, e.generation);
+        } else lastGood.set(path, d, e.dataAt, e.generation);
       },
       (err) => {
         e.st = "err";
+        if (metadata && e.code === "library_changed") CACHE.delete("/library/generation");
         if (e.status == null) e.status = /abort/i.test(String(err)) ? "timeout" : "mạng";
       },
     )
@@ -78,7 +97,7 @@ export function fetchJson(path: string, cacheOnly = false): Entry {
 
 // Chỉ xoá trạng thái request để tải mới; luôn giữ dữ liệu thành công gần nhất.
 export function invalidate(test: (path: string) => boolean) {
-  [...CACHE.keys()].forEach((k) => { if (test(k)) CACHE.delete(k); });
+  [...CACHE.keys()].forEach((k) => { if (test(k)) { FORCE_REFRESH.add(k); CACHE.delete(k); } });
   notify();
 }
 

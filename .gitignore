@@ -36,3 +36,7 @@ Thumbs.db
 
 # Production build
 www/
+
+# Generated native and iOS web build output
+/ios/build/
+/dist-ios/

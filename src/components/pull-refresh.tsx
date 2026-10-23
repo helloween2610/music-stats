@@ -17,7 +17,7 @@ export function PullRefresh({notify}:{notify:(message:string)=>void}) {
   };
   const runRef=useRef(run);runRef.current=run;
   useEffect(()=>{
-    const page=anchor.current?.parentElement;
+    const page=anchor.current?.closest<HTMLElement>('.zaui-page');
     if(!page)return;
     const gesture=new PullGesture();let suppressClickUntil=0;
     const cancel=()=>{gesture.cancel();setDistance(0);};

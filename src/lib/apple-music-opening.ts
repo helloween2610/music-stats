@@ -14,6 +14,19 @@ export function shareAppleMusicLink(link: string, target: {share(data: {url: str
   return target.share({url:url.href});
 }
 
+export function appleMusicNativeUrl(link: string): string {
+  const url = appleMusicHttpsUrl(link);
+  return url.href.replace(/^https:/, 'musics:');
+}
+
+export function appleMusicStoreId(link: string): string | undefined {
+  const url = appleMusicHttpsUrl(link);
+  const trackID = url.searchParams.get('i');
+  if (trackID && /^\d+$/.test(trackID)) return trackID;
+  const pathID = url.pathname.match(/\/(\d+)\/?$/)?.[1];
+  return pathID && /^\d+$/.test(pathID) ? pathID : undefined;
+}
+
 // Report only a numeric SDK code, never native payloads or access tokens.
 export function appleMusicOpenError(error: unknown): string {
   if (error instanceof Error && error.message === 'external_open_timeout') return 'AM5:TIMEOUT';

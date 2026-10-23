@@ -4,6 +4,8 @@ import { openShareSheet, saveImageToGallery } from "zmp-sdk";
 import { Sheet } from "zmp-ui";
 import { Ctx, VM } from "@/vm";
 import { Thumb } from "./ui";
+import { IOS_APP } from "@/config";
+import { shareImageDataUrlInNativeApp } from "@/lib/ios-bridge";
 
 type Any = any;
 
@@ -85,6 +87,7 @@ export function ShareSheet({ vm, c }: { vm: VM; c: Ctx }) {
     }
   };
   const save = async (dataUrl: string) => {
+    if (IOS_APP && await shareImageDataUrlInNativeApp(dataUrl)) return;
     if (isZalo()) await saveImageToGallery({ imageBase64Data: dataUrl });
     else {
       const a = document.createElement("a");
@@ -112,7 +115,7 @@ export function ShareSheet({ vm, c }: { vm: VM; c: Ctx }) {
     let url = "";
     try {
       url = await render();
-      await openShareSheet({ type: "image", data: { imageUrls: [url] } });
+      if (!(IOS_APP && await shareImageDataUrlInNativeApp(url))) await openShareSheet({ type: "image", data: { imageUrls: [url] } });
       toastThen("Đã gửi");
     } catch (e) {
       // Một số bản Zalo chỉ nhận ảnh qua URL: lưu vào máy để người dùng tự gửi.

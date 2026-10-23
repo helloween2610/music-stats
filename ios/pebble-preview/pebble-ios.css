@@ -1,0 +1,484 @@
+.pebble-panel {
+  margin: 10px 16px 14px;
+  padding: 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, .12));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface, #16181d) 86%, #5b8cff 14%);
+  color: var(--text, #f4f5f6);
+}
+
+.pebble-source-divider {
+  height: .5px;
+  margin-left: 16px;
+  background: var(--line, rgba(255, 255, 255, .12));
+}
+
+.pebble-source-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 8px 12px 16px;
+}
+
+.pebble-source-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.pebble-source-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+
+.pebble-source-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--up, #4ade80);
+}
+
+.pebble-source-detail {
+  margin-top: 4px;
+  color: var(--text3, #8f9499);
+  font-size: var(--type-caption, 12px);
+  line-height: 1.45;
+}
+
+.pebble-panel button,
+.pebble-panel input,
+.pebble-source-row button {
+  font: inherit;
+}
+
+.pebble-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.pebble-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pebble-status {
+  min-width: 0;
+  color: var(--text3, #8f9499);
+  font-size: 11px;
+  text-align: right;
+}
+
+.pebble-now {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.pebble-track {
+  min-width: 0;
+}
+
+.pebble-track strong,
+.pebble-track span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pebble-track strong {
+  font-size: 14px;
+}
+
+.pebble-track span {
+  margin-top: 2px;
+  color: var(--text2, #c9cdd2);
+  font-size: 13px;
+}
+
+.pebble-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pebble-controls button,
+.pebble-playlist-action,
+.pebble-toggle {
+  min-height: 34px;
+  border: 1px solid var(--line, rgba(255, 255, 255, .16));
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .08);
+  color: var(--text, #f4f5f6);
+}
+
+.pebble-controls button {
+  min-width: 38px;
+  min-height: 30px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.pebble-now-card-controls {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.pebble-now-chip {
+  flex: none;
+  min-width: 38px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  border: 1px solid var(--line2, rgba(255, 255, 255, .24));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .08);
+  color: var(--text, #f4f5f6);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 28px;
+  white-space: nowrap;
+}
+
+.pebble-now-icon {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  background: rgba(255, 255, 255, .1);
+}
+
+.pebble-now-icon:nth-child(2) {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  background: var(--accent, #ffcc00);
+  border-color: var(--accent, #ffcc00);
+  color: #0b0b0d;
+}
+
+.pebble-now-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: currentColor;
+}
+
+.pebble-now-icon:nth-child(2) svg {
+  width: 20px;
+  height: 20px;
+}
+
+.pebble-now-chip:focus-visible {
+  outline: 2px solid var(--accent, #ffcc00);
+  outline-offset: 2px;
+}
+
+.pebble-toggle {
+  flex: none;
+  height: 30px;
+  min-height: 30px;
+  min-width: 0;
+  padding: 0 12px;
+  border-radius: 999px;
+  border-color: var(--line2, rgba(255, 255, 255, .24));
+  background: transparent;
+  text-align: center;
+  color: var(--accent, #ffcc00);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pebble-toggle.is-on {
+  border-color: var(--line2, rgba(255, 255, 255, .24));
+  background: transparent;
+}
+
+.pebble-hint {
+  color: var(--text2, #c9cdd2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pebble-refresh {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 10px;
+  border: 1px solid var(--line, rgba(255, 255, 255, .16));
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .08);
+  color: var(--text, #f4f5f6);
+}
+
+.playlist-tile.pebble-favorite {
+  border-color: var(--accent, #ffc107) !important;
+  box-shadow: inset 0 0 0 1.5px var(--accent, #ffc107);
+}
+
+.playlist-tile {
+  position: relative;
+}
+
+.pebble-today-status {
+  display: none !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  margin: 12px 16px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line, rgba(255, 255, 255, .12));
+  border-radius: 14px;
+  background: var(--surface, #14161b);
+  color: var(--text2, #c9cdd2);
+}
+
+.pebble-today-status .pebble-source-dot.is-off {
+  background: #ff5572;
+}
+
+.pebble-today-status .pebble-source-dot.is-checking {
+  background: var(--accent, #ffcc00);
+}
+
+.pebble-today-status-label {
+  flex: none;
+  color: var(--text2, #c9cdd2);
+  font-size: 14px;
+}
+
+.pebble-today-status strong {
+  min-width: 86px;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text2, #c9cdd2);
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pebble-today-restart {
+  flex: none;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line2, rgba(255, 255, 255, .24));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent, #ffcc00);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pebble-mark-sheet,
+.pebble-track-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.pebble-mark-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .68);
+}
+
+.pebble-mark-card,
+.pebble-track-menu-card {
+  position: relative;
+  width: 100%;
+  max-height: min(76vh, 680px);
+  overflow: hidden;
+  border: 1px solid var(--line2, rgba(255, 255, 255, .18));
+  border-radius: 18px 18px 0 0;
+  background: var(--surface, #14161b);
+  color: var(--text, #f4f5f6);
+  box-shadow: 0 -16px 44px rgba(0, 0, 0, .34);
+}
+
+.pebble-mark-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, .12));
+}
+
+.pebble-mark-head strong {
+  font-size: 18px;
+}
+
+.pebble-mark-head button,
+.pebble-track-menu-close {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line2, rgba(255, 255, 255, .18));
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .08);
+  color: var(--text, #f4f5f6);
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.pebble-mark-list {
+  max-height: calc(min(76vh, 680px) - 69px);
+  overflow: auto;
+  padding: 8px 0 max(20px, env(safe-area-inset-bottom));
+}
+
+.pebble-mark-empty {
+  margin: 0 16px;
+  padding: 28px 14px;
+  color: var(--text3, #8f9499);
+  text-align: center;
+}
+
+.pebble-mark-row {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, .1));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.pebble-mark-row strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pebble-mark-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pebble-mark-plus {
+  position: relative;
+  display: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent, #ffcc00);
+  color: #0b0b0d;
+}
+
+.pebble-mark-row.is-outside-library .pebble-mark-plus {
+  display: inline-flex;
+}
+
+.pebble-mark-plus::before,
+.pebble-mark-plus::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 999px;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.pebble-mark-plus::before {
+  width: 9px;
+  height: 2px;
+}
+
+.pebble-mark-plus::after {
+  width: 2px;
+  height: 9px;
+}
+
+.pebble-mark-meta,
+.pebble-mark-extra {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--text2, #c9cdd2);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pebble-mark-extra {
+  color: var(--text3, #8f9499);
+  font-size: 12px;
+}
+
+.pebble-track-menu {
+  align-items: center;
+  padding: 18px;
+}
+
+.pebble-track-menu-card {
+  max-width: 360px;
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.pebble-track-menu-title strong,
+.pebble-track-menu-title span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pebble-track-menu-title span {
+  margin-top: 4px;
+  color: var(--text2, #c9cdd2);
+  font-size: 13px;
+}
+
+.pebble-track-menu-action,
+.pebble-track-menu-close {
+  width: 100%;
+  height: 42px;
+  margin-top: 12px;
+  border-radius: 999px;
+  font-size: 15px;
+}
+
+.pebble-track-menu-action {
+  border: 0;
+  background: var(--accent, #ffcc00);
+  color: #0b0b0d;
+  font: inherit;
+  font-weight: 700;
+}

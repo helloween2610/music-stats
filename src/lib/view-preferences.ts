@@ -4,7 +4,7 @@ export const VIEW_DEFAULTS = {
   filter:'Tất cả', periodSort:'Giờ nghe', periodFilter:'Tất cả', artistFilter:'Tất cả',
   albumFilter:'Tất cả', albumSort:'Giờ nghe', songView:'Danh sách', sort:'Giờ nghe',
   scope:'Tháng', open:0, q:'', qd:'', sel:{}, playlistSort:'Thứ tự gốc',
-  playlistFolder:'Tất cả', listLimit:50, releaseMode:'recent',
+  playlistFolder:'Tất cả', listLimit:50, releaseMode:'recent', trendMode:'rising',
 } as const;
 export type ViewPreferences = Pick<UI, keyof typeof VIEW_DEFAULTS>;
 export type SavedViews = Record<string, Partial<ViewPreferences>>;
@@ -12,7 +12,8 @@ const KEY='music-stats:view-preferences:v1';
 const choices:Record<string,readonly string[]>={
   sort:['Giờ nghe','Điểm','Lượt','Lịch sử'], periodSort:['Giờ nghe','Điểm All time','Lượt','Lịch sử'],
   albumSort:['Giờ nghe','Lượt','Lịch sử'], songView:['Danh sách','Lịch sử'],
-  scope:['Tháng','Tháng trước','Năm','All time'],releaseMode:['recent','upcoming','settings'],
+  scope:['Tháng','Tháng trước','Năm','All time'],releaseMode:['recommend','recent','upcoming','saved','settings'],
+  trendMode:['rising','Tháng trước','Tháng','Năm'],
 };
 export function cleanView(value:unknown):Partial<ViewPreferences> {
   const out:Record<string,unknown>={};

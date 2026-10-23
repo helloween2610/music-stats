@@ -20,6 +20,10 @@
     "dev:web": "vite --config vite.web.config.mts --host 127.0.0.1 --port 4174 --strictPort",
     "build:web": "vite build --config vite.web.config.mts",
     "preview:web": "vite preview --config vite.web.config.mts --host 127.0.0.1 --port 4174 --strictPort",
+    "dev:ios": "vite --config vite.ios.config.mts --host 127.0.0.1 --port 4175 --strictPort",
+    "build:ios": "vite build --config vite.ios.config.mts",
+    "sync:ios": "npm run build:ios && cap sync ios",
+    "open:ios": "cap open ios",
     "login": "zmp login",
     "start": "zmp start",
     "deploy": "zmp deploy",
@@ -27,6 +31,12 @@
     "test:discovery": "node --test tests/discovery.test.mjs"
   },
   "dependencies": {
+    "@capacitor/app-launcher": "^8.0.1",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.4",
+    "@capacitor/ios": "^8.5.3",
+    "@capacitor/share": "^8.0.3",
     "html-to-image": "^1.11.13",
     "jotai": "^2.12.1",
     "react": "^18.3.1",

@@ -12,6 +12,8 @@ export const excludedRankedAlbum=(title:string,genre='')=>
   || /Archive|Sopor Aeternus Collect|Valkyrja|Gone - A Collection|Walking Cloud|One Step More|Rays Of Darkness/i.test(title)
   || /NHAC|PIANO|CLASSICAL INSTRU\./i.test(genre);
 
+const ALBUM_TRACK_BONUS_CAP=12;
+
 // Same level/hour rules as the album chart, using full per-track counts so merging
 // neither adds rounded hours nor takes the better rank of the two old editions.
 export function groupedAllTimeAlbumRanks(tracks:any[],stats:any[]):any[]|null {
@@ -34,8 +36,13 @@ export function allTimeAlbumRanks(tracks:any[],stats:any[]):any[]|null {
     row.excluded ||= excludedRankedAlbum(t.album, t.genre || '');
     albums.set(key,row);
   }
-  const ranked=[...albums.values()].map(r=>({...r,hours:r.seconds/3600,level:r.seconds>=86400?3:r.duration>=2700&&r.seconds>=18000?2:(r.duration>900&&r.duration<2700&&r.seconds>=7200)||(r.duration>=2700&&r.seconds<18000)?1:0}))
-    .filter(r=>r.seconds>0&&!r.excluded&&r.level).sort((a,b)=>b.level-a.level || b.seconds-a.seconds);
+  const ranked=[...albums.values()].map(r=>{
+    const hours=r.seconds/3600;
+    const level=r.seconds>=86400?3:r.duration>=2700&&r.seconds>=18000?2:(r.duration>900&&r.duration<2700&&r.seconds>=7200)||(r.duration>=2700&&r.seconds<18000)?1:0;
+    const trackFactor=Math.sqrt(Math.min(r.tracks,ALBUM_TRACK_BONUS_CAP)/ALBUM_TRACK_BONUS_CAP);
+    return {...r,hours,level,trackFactor,score:hours*trackFactor};
+  })
+    .filter(r=>r.seconds>0&&!r.excluded&&r.level).sort((a,b)=>b.score-a.score || b.seconds-a.seconds || b.plays-a.plays || a.album_artist.localeCompare(b.album_artist) || a.album.localeCompare(b.album));
   let rank=0;
-  return ranked.map((r,i)=>{if(!i || r.level!==ranked[i-1].level || r.seconds!==ranked[i-1].seconds)rank=i+1;return {...r,rank};});
+  return ranked.map((r,i)=>{if(!i || r.score!==ranked[i-1].score || r.seconds!==ranked[i-1].seconds)rank=i+1;return {...r,rank};});
 }

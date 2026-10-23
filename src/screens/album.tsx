@@ -1,5 +1,5 @@
-import { LastfmTrackMetrics } from '@/components/lastfm-track-metrics';
-import { ShortcutTarget, albumShortcut, artistShortcut } from '@/components/shortcuts';
+import { LastfmScrobbleRefreshButton, LastfmTrackMetrics } from '@/components/lastfm-track-metrics';
+import { ShortcutTarget, albumShortcut, artistShortcut, songShortcut } from '@/components/shortcuts';
 import { useEffect, useState } from 'react';
 import { DiscoveryError, loadAlbumTracks, loadSimilarAlbums, vnDate, type AlbumCatalog, type SimilarAlbum } from '@/lib/discovery';
 import { albumId, mergeAlbumTracks, unreleasedTrack } from '@/lib/albums';
@@ -8,7 +8,8 @@ import { ini } from '@/lib/fmt';
 import { Ctx, VM } from '@/vm';
 import { AppleMusicArtwork } from '@/components/apple-music-artwork';
 import { compactPlays, MusicMetadata, SongTitle } from '@/components/music-metadata';
-import { EmptyState, SampleChip, Thumb } from '@/components/ui';
+import { ChartCard, EmptyState, SampleChip, Thumb } from '@/components/ui';
+import { MonthlySummaryReadout } from '@/components/month-summary-popup';
 import { SongListRow } from './main';
 
 
@@ -60,6 +61,9 @@ export function AlbumScreen({vm,c}:{vm:VM;c:Ctx}) {
   const current=catalog?.identity===identity ? catalog : null;
   const full=expanded?current?.data:null;
   const rows=album ? full ? mergeAlbumTracks(full.tracks,album.songs) : album.songs.map((r:any)=>({...r,local:r})) : [];
+  const lastfmTracks=rows.map((r:any)=>r.local
+    ? {artist:r.local.artist || '',title:r.local.title || '',trackId:r.local.statsTrackId || r.local.tid}
+    : {artist:r.artist || '',title:r.title || ''}).filter((r:any)=>r.artist && r.title);
   const today=vnDate();
   const discs=[...new Set<number>(rows.map((r:any)=>r.disc))];
   if(!album)return <EmptyState title="Không tìm thấy album" note="Album này chưa có bài hát trong dữ liệu thư viện."/>;
@@ -81,6 +85,12 @@ export function AlbumScreen({vm,c}:{vm:VM;c:Ctx}) {
         <div className="t2 metric-label">{m.label}</div>
       </div>)}
     </div>}
+    {vm.ch?.alh && <section className="album-history-section" aria-label="Giờ nghe và lịch sử hạng album">
+      <div className="sec-side detail-chart-heading detail-chart-heading-readout-only">
+        <div className="side num pretty"><MonthlySummaryReadout value={vm.rd?.alh} c={c} months={vm.periodOptions?.alh} onMonthSelect={index => c.set(q => ({ sel: { ...q.sel, alh: index } }))}/></div>
+      </div>
+      <ChartCard>{vm.ch.alh}</ChartCard>
+    </section>}
     <div className="album-tracks" aria-label="Bài hát trong album">
     {error ? <div className="card pad t2" role="status">{error} <button type="button" className="discovery-action" onClick={()=>setAttempt(n=>n+1)}>Thử lại</button></div>
       : !current ? <div className="card pad t3" role="status">Đang tải danh sách đầy đủ…</div>
@@ -88,20 +98,21 @@ export function AlbumScreen({vm,c}:{vm:VM;c:Ctx}) {
     {discs.map(disc=><section key={disc}>
       {discs.length>1 && <div className="cap">Đĩa {disc}</div>}
       <div className="card song-list">{rows.filter((r:any)=>r.disc===disc).map((r:any)=>r.local ? <div key={r.id || r.tid}>
-        <SongListRow r={{...r.local,releaseId:album.releaseId,trackNumber:r.trackNumber,titleTone:unreleasedTrack(r.local.releaseDate || r.releaseDate,today)?'unreleased':r.local.gone?'muted':r.local.titleTone,metadata:[
+        <SongListRow r={{...r.local,releaseId:album.releaseId,trackNumber:r.trackNumber,applePid:r.local.applePid || r.local.apple_pid || r.local.persistentId,queueContext:{kind:'album',artist:album.artist,album:album.title},titleTone:unreleasedTrack(r.local.releaseDate || r.releaseDate,today)?'unreleased':r.local.gone?'muted':r.local.titleTone,metadata:[
           {text:compactPlays(r.local.metric),title:'Lượt nghe',tone:'gold'},
           {text:r.local.listening,title:'Thời gian nghe',tone:'gray'},
           ...(r.local.metadata?.filter((m:any)=>m.title!=='Năm phát hành') || []),
-        ].filter((m:any)=>m.text)}} right={expanded ? <LastfmTrackMetrics artist={r.local.artist} title={r.local.title} trackId={r.local.statsTrackId || r.local.tid} outsideLibrary={!!r.local.gone && !unreleasedTrack(r.local.releaseDate || r.releaseDate,today)}/> : undefined} hideAlbum hideArtist/>
+        ].filter((m:any)=>m.text)}} right={expanded ? <LastfmTrackMetrics artist={r.local.artist} title={r.local.title} trackId={r.local.statsTrackId || r.local.tid} outsideLibrary={!!r.local.gone && !unreleasedTrack(r.local.releaseDate || r.releaseDate,today)} addToLibrary={r.local.gone && !unreleasedTrack(r.local.releaseDate || r.releaseDate,today)?{query:{kind:'song',artist:r.local.artist,title:r.local.title,album:r.local.originalAlbum || r.local.album,trackId:r.local.tid},notify:c.ptoast}:undefined}/> : undefined} hideAlbum hideArtist/>
         {r.local.gone && <div className="album-removed t3">Không còn trong thư viện</div>}
-      </div> : <AppleMusicArtwork key={r.id} className="row song-row similar-track" query={{kind:'song',artist:r.artist,title:r.title,album:album.title,releaseId:album.releaseId}} notify={c.ptoast} lazy>
+      </div> : <AppleMusicArtwork key={r.id} className="row song-row similar-track" query={{kind:'song',artist:r.artist,title:r.title,album:album.title,releaseId:album.releaseId}} notify={c.ptoast} lazy shortcut={songShortcut({title:r.title,artist:r.artist,album:album.title,applePid:r.persistentId,queueContext:{kind:'album',artist:album.artist,album:album.title}})}>
         <div className="song-artwork"><Thumb ini={ini(r.title)} img={album.img} size={52}/></div>
         <div className="song-copy">
           <SongTitle title={r.title} tone={unreleasedTrack(r.releaseDate,today)?'unreleased':'muted'} trackNumber={r.trackNumber} items={r.duration_s ? [{text:durationLabel(r.duration_s),title:'Độ dài bài hát',tone:'gray'}] : []}/>
         </div>
-        <LastfmTrackMetrics artist={r.artist} title={r.title} outsideLibrary={!unreleasedTrack(r.releaseDate,today)}/>
+        <LastfmTrackMetrics artist={r.artist} title={r.title} outsideLibrary={!unreleasedTrack(r.releaseDate,today)} addToLibrary={!unreleasedTrack(r.releaseDate,today)?{query:{kind:'song',artist:r.artist,title:r.title,album:album.title,releaseId:album.releaseId},notify:c.ptoast}:undefined}/>
       </AppleMusicArtwork>)}</div>
     </section>)}
+    {!!lastfmTracks.length&&<LastfmScrobbleRefreshButton notify={c.ptoast} tracks={lastfmTracks}/>}
     {full && <div className="album-catalog-source t3">{full.tracks.length} bài · <a href={full.sourceUrl} target="_blank" rel="noreferrer">{full.source} ↗</a></div>}
     </div>
     <div className="card album-info" aria-label="Thông tin album">{album.info.map((r:any)=><div className="album-info-row" key={r.k}>

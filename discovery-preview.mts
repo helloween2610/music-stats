@@ -52,7 +52,7 @@ export function discoveryPreview(): Plugin {
       // Use the deployed persistent catalog/release stores just like Zalo. The local
       // preview store is intentionally in-memory, so serving release routes locally
       // would make the saved album list disappear whenever Vite restarts.
-      const deployedRoutes=new Set(['/apple-music','/release-artists','/upcoming','/album-tracks']);
+      const deployedRoutes=new Set(['/apple-music','/apple-playlist-song','/release-artists','/upcoming','/album-tracks','/album-recommendations']);
       if(deployedRoutes.has(new URL(req.url||'/','http://localhost').pathname)){
         try{
           const response=await fetch('https://stats.helloween2610.workers.dev/discovery'+req.url,{headers:{Authorization:auth},signal:AbortSignal.timeout(90000)});

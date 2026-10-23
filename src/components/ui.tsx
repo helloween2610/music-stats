@@ -1,4 +1,5 @@
-import { CSSProperties, ReactNode, useEffect, useRef } from "react";
+import { CSSProperties, Fragment, ReactNode, useEffect, useRef } from "react";
+import { longPress } from "@/lib/long-press";
 
 type Any = any;
 
@@ -72,6 +73,35 @@ export const Sec = ({ children, anchor }: { children: ReactNode; anchor?: string
   <div className="sec" data-anchor={anchor}>{children}</div>
 );
 
+export function DetailChartReadout({ value, onPeriodTap, onPeriodLongPress }: { value?: string; onPeriodTap?: () => void; onPeriodLongPress?: () => void }) {
+  const latestLongPress = useRef(onPeriodLongPress);
+  latestLongPress.current = onPeriodLongPress;
+  const gesture = useRef<ReturnType<typeof longPress>>();
+  if (!gesture.current) gesture.current = longPress(() => latestLongPress.current?.());
+  useEffect(() => () => gesture.current?.cancel(), []);
+  if (!value) return null;
+  const parts = value.split(/\s*·\s*/);
+  return <>
+    {parts.map((part, index) => <Fragment key={`${index}-${part}`}>
+      {index > 0 && <span className="detail-chart-readout-separator">·</span>}
+      {index === 0 && onPeriodTap
+        ? <button type="button" className="detail-chart-readout-period detail-chart-readout-period-button"
+          aria-label={`Mở tổng kết ${part}${onPeriodLongPress ? "; nhấn giữ để chọn tháng" : ""}`}
+          aria-haspopup="dialog"
+          onPointerDown={event => { if (!event.isPrimary || event.button !== 0 || !onPeriodLongPress) { gesture.current!.cancel(); return; } gesture.current!.start(event.clientX, event.clientY); }}
+          onPointerMove={event => gesture.current!.move(event.clientX, event.clientY)}
+          onPointerUp={() => gesture.current!.end()}
+          onPointerCancel={() => gesture.current!.cancel()}
+          onPointerLeave={() => gesture.current!.cancel()}
+          onClick={event => { if (gesture.current!.consumeClick()) { event.preventDefault(); event.stopPropagation(); return; } onPeriodTap(); }}
+          onContextMenu={event => { if (!onPeriodLongPress) return; event.preventDefault(); event.stopPropagation(); gesture.current!.blockClick(); onPeriodLongPress(); }}
+          onKeyDown={event => { if (onPeriodLongPress && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) { event.preventDefault(); onPeriodLongPress(); } }}
+        >{part}</button>
+        : <span className={index === 0 ? "detail-chart-readout-period" : index === parts.length - 1 ? "detail-chart-readout-rank" : "detail-chart-readout-value"}>{index === parts.length - 1 ? part.replace(/^hạng (?=#)/i, "") : part}</span>}
+    </Fragment>)}
+  </>;
+}
+
 export function SecLink({ title, link, onTap }: { title: ReactNode; link: ReactNode; onTap?: () => void }) {
   return (
     <div className="sec-row">
@@ -92,7 +122,7 @@ export function SecSide({ title, side, anchor }: { title: ReactNode; side: React
 
 export function ChartCard({ readout, children, style }: { readout?: ReactNode; children: ReactNode; style?: CSSProperties }) {
   return (
-    <div className="card pad" style={style}>
+    <div className="card pad chart-surface" style={style}>
       {readout !== undefined && <div className="readout">{readout}</div>}
       {children}
     </div>
@@ -121,6 +151,10 @@ export function EmptyState({ title, note, action, iconOnly=false }: { title: str
       )}
     </div>
   );
+}
+
+export function EndOfPage({ label = "Đã hết trang" }: { label?: string }) {
+  return <div className="page-end-marker" role="status" aria-label={label}><span>{label}</span></div>;
 }
 
 export const Spin = ({ size = 14 }: { size?: number }) => (

@@ -58,19 +58,26 @@ test('album song navigation returns to album and never creates a self-parent',()
 test('album VM waits for complete library pages and resolves real API data',async()=>{
   const calls=[],payload={
     '/artwork':{tracks:{},albums:{},artists:{}},'/ratings':stats,
-    '/library/tracks?offset=0&limit=1000':{rows},
-    '/charts/songs?window=at&limit=5000':{rows:[]},'/charts/albums?limit=5000':{rows:[]},
+    '/library/generation':{generation:'1'},
+    '/library/metadata?offset=0&limit=1000&generation=1':{generation:'1',rows},
+    '/charts/songs?window=at&limit=5000':{rows:[{track_id:'TR1',rank:20}]},'/charts/albums?limit=5000':{rows:[]},
     '/history/songs?top=5000&months=36':{periods:[],rows:[]},
+    '/history/albums?artist=Band&album=Shared%20%2F%20Title&months=60':{currentRank:12,rows:[{period:'2026-09',hours:1,rank:14},{period:'2026-10',hours:2,rank:12}]},
   };
-  globalThis.fetch=async url=>{const u=new URL(url),path=u.pathname+u.search;calls.push(path);return Response.json(payload[path]);};
+  globalThis.fetch=async url=>{const u=new URL(url),path=u.pathname+u.search;calls.push(path);return Response.json(u.pathname==='/history/song-ranks'?{periods:['T05/24'],rows:[{track_id:'TR1',best:{period:'T05/24',rank:12},history:[{period:'T05/24',rank:12}]}]}:payload[path]);};
   const c={screen:'album',id,p:{...app.BASE},go:()=>{},set:()=>{},later:()=>{},ptoast:()=>{}};
   assert.equal(app.buildVM(c).isLoading,true);
   for(let i=0;i<4;i++){await new Promise(setImmediate);app.buildVM(c);}
   const vm=app.buildVM(c);
   assert.equal(vm.album.title,'Shared / Title');
   assert.equal(vm.album.songs.length,3);
+  assert.equal(vm.album.songs.find(song=>song.tid==='TR1').allTimeChange,-8);
+  assert.ok(vm.ch.alh);
+  assert.equal(vm.rd.alh,'T10/26 · 2h · hạng #12');
   assert.equal(vm.unavailable,undefined);
   assert.ok(calls.includes('/ratings'));
+  assert.ok(calls.includes('/library/metadata?offset=0&limit=1000&generation=1'));
+  assert.ok(calls.some(path=>path.startsWith('/history/song-ranks?ids=')));
 });
 
 test('release albums without library tracks open a useful album view and retain album share identity',async()=>{
@@ -238,13 +245,13 @@ test('merged All time album ranks recalculate level, totals, ties and exclusions
   const tracks=[row('A','First',1,1,{album_artist:'In Flames',album:'The Jester Race',duration_s:1800}),row('B','Bonus',1,2,{album_artist:'In Flames',album:edition,duration_s:1800}),row('C','Other',1,1,{album:'Other',duration_s:3600}),row('X','Excluded',1,1,{album:'Archive',duration_s:3600})];
   const stats=[{track_id:'A',plays:12},{track_id:'B',plays:12},{track_id:'C',plays:12},{track_id:'X',plays:1000}];
   const ranks=app.groupedAllTimeAlbumRanks(tracks,stats);
-  assert.equal(ranks.length,2);assert.deepEqual(ranks.map(r=>r.rank),[1,1]);
+  assert.equal(ranks.length,2);assert.deepEqual(ranks.map(r=>r.rank),[1,2]);
   const merged=ranks.find(r=>r.album_artist==='In Flames');
-  assert.equal(merged.hours,12);assert.equal(merged.level,2);assert.equal(merged.tracks,2);
+  assert.equal(merged.hours,12);assert.equal(merged.level,2);assert.equal(merged.tracks,2);assert.ok(merged.score>ranks[1].score);
   assert.equal(app.groupedAllTimeAlbumRanks(tracks,stats.slice(0,2)),null);
 });
 
-test('All time album list prioritizes level over hours and agrees with cover ranks without a merged edition',()=>{
+test('All time album list ranks by listening time with a capped track-count advantage',()=>{
   const tracks=[
     row('A','Long album',1,1,{album:'Long album',duration_s:2700}),
     row('B','EP',1,1,{album:'EP',duration_s:1800}),
@@ -255,9 +262,9 @@ test('All time album list prioritizes level over hours and agrees with cover ran
   ];
   const plays=[['A',8],['B',40],['C',8],['D',1],['E',72],['Z',0]].map(([track_id,plays])=>({track_id,plays}));
   const ranked=app.rankedAlbums(plays,tracks,'Giờ nghe',true);
-  assert.deepEqual(ranked.map(r=>r.name),['Leader','Long album','Tie','EP']);
-  assert.deepEqual(ranked.map(r=>r.level),[3,2,2,1]);
-  assert.deepEqual(ranked.map(r=>r.rank),[1,2,2,4]);
+  assert.deepEqual(ranked.map(r=>r.name),['Leader','EP','Long album','Tie']);
+  assert.deepEqual(ranked.map(r=>r.level),[3,1,2,2]);
+  assert.deepEqual(ranked.map(r=>r.rank),[1,2,3,3]);
   assert.deepEqual(ranked.map(r=>[r.key,r.rank]),app.allTimeAlbumRanks(tracks,plays).map(r=>[r.album_artist+'\u001f'+r.album,r.rank]));
   assert.equal(ranked.find(r=>r.name==='Long album').plays,8);
   assert.equal(app.rankedAlbums(plays,tracks,'Giờ nghe')[1].name,'EP');
@@ -267,6 +274,16 @@ test('All time list uses full album duration including unplayed tracks when assi
   const tracks=[row('A','Played',1,1,{album:'X',duration_s:1800}),row('B','Unplayed',1,2,{album:'X',duration_s:900})];
   const ranks=app.rankedAlbums([{track_id:'A',plays:12},{track_id:'B',plays:0}],tracks,'Giờ nghe',true);
   assert.equal(ranks[0].level,2);assert.equal(ranks[0].tracks,1);assert.equal(ranks[0].hours,6);
+});
+
+test('All time album track-count advantage stops at twelve tracks',()=>{
+  const album=(name,count)=>Array.from({length:count},(_,i)=>row(`${name}${i}`,`${name} ${i}`,1,i+1,{album:name,duration_s:300}));
+  const tracks=[...album('Four',4),...album('Twelve',12),...album('Twenty',20)];
+  const plays=tracks.map(track=>({track_id:track.id,plays:track.album==='Four'?36:track.album==='Twelve'?12:Number(track.id.slice(6))<4?8:7}));
+  const ranks=app.rankedAlbums(plays,tracks,'Giờ nghe',true);
+  assert.deepEqual(ranks.map(r=>r.name),['Twelve','Twenty','Four']);
+  assert.equal(ranks[0].score,ranks[1].score);
+  assert.ok(ranks[0].score>ranks[2].score);
 });
 
 test('All time overview and full album list use the same level order, even without grouped editions',async()=>{

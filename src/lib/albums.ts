@@ -5,6 +5,7 @@ import { ini, vn, fmtH, dmy } from './fmt';
 
 const US='\u001f';
 type Any=any;
+const syntheticReleaseId=(id:string)=>id.startsWith('playlist-recommend:') || id.startsWith('saved:');
 export const albumId=(artist:string,title:string)=>JSON.stringify([artist,canonicalAlbum(artist,title)]);
 export function parseAlbumId(id:string|null):{artist:string;title:string}|null {
   try {
@@ -70,7 +71,7 @@ export function albumView(id:string|null,rows:Any[],stats:Any,supplemental:Any,r
     return {...t, allPlays:source.allPlays, statsTrackId:source.id, lastPlayed:source.lastPlayed || t.lastPlayed};
   };
   return {
-    id,key,title:identity.title,artist:identity.artist,ini:ini(identity.title),
+    id,key,title:identity.title,artist:identity.artist,ini:ini(identity.title),rank:rank || null,
     img:artwork?.albums?.[key] || tracks.map(t=>artwork?.tracks?.[t.id]).find(Boolean),
     goArtist:()=>go('artist',identity.artist),
     metadata:collectionMetadata(group,today,true),
@@ -99,9 +100,10 @@ export function albumView(id:string|null,rows:Any[],stats:Any,supplemental:Any,r
 
 // Release metadata remains useful even before any of its tracks enter the library.
 export function releaseAlbumView(release:Release,go:(screen:any,id:string)=>void) {
+  const releaseId=syntheticReleaseId(release.id)?undefined:release.id;
   return {
     id:albumId(release.artist,release.title),key:release.artist+US+release.title,
-    title:release.title,artist:release.artist,ini:ini(release.title),img:release.cover,releaseId:release.id,
+    title:release.title,artist:release.artist,ini:ini(release.title),img:release.cover,releaseId,
     goArtist:()=>go('artist',release.artist),
     metadata:[{text:releaseDate(release.date),title:'Ngày phát hành'},{text:release.type,title:'Loại phát hành'}],
     metrics:[],discs:[],songs:[],

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BROWSER_PREVIEW } from '@/config';
 import { loadAppleDetail, type AppleDetailQuery } from '@/lib/discovery';
 import { shareAppleMusicLink } from '@/lib/apple-music-opening';
+import { openAppleMusicInNativeApp, shareUrlInNativeApp } from '@/lib/ios-bridge';
 
 export function AppleMusicArtwork({query,children,notify,round=false,className,lazy=false,shortcut}: {
   query: AppleDetailQuery; children: ReactNode; notify:(message:string)=>void; round?:boolean; className?:string; lazy?:boolean; shortcut?:ShortcutEntity;
@@ -40,7 +41,9 @@ export function AppleMusicArtwork({query,children,notify,round=false,className,l
       }
     }
     try {
-      if(typeof navigator.share === 'function') await shareAppleMusicLink(url,navigator);
+      if(await openAppleMusicInNativeApp(url)) {}
+      else if(typeof navigator.share === 'function') await shareAppleMusicLink(url,navigator);
+      else if(await shareUrlInNativeApp(url,'Apple Music')) {}
       else if(BROWSER_PREVIEW) window.open(url,'_blank','noopener,noreferrer');
       else {await navigator.clipboard.writeText(url);notify('Đã sao chép liên kết. Chạy Shortcut hoặc dán vào Safari.');}
     } catch(error) {

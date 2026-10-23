@@ -4,8 +4,10 @@
 // ghép bài chưa khớp và công tắc gộp remaster. Ghi đè thêm được VITE_API_BASE / VITE_DATA_SOURCE.
 const env = (import.meta as any).env || {};
 export const BROWSER_PREVIEW = import.meta.env.VITE_BROWSER_PREVIEW === "true";
-const previewPath = window.location.pathname.replace(/\/$/, "");
-export const DESKTOP_WEB = BROWSER_PREVIEW && (previewPath.endsWith("/web") || previewPath.endsWith("/web.html") || new URLSearchParams(window.location.search).has("desktop"));
+export const IOS_APP = import.meta.env.VITE_IOS_APP === "true";
+const locationLike = typeof window === "undefined" ? null : window.location;
+const previewPath = locationLike?.pathname.replace(/\/$/, "") || "";
+export const DESKTOP_WEB = BROWSER_PREVIEW && (previewPath.endsWith("/web") || previewPath.endsWith("/web.html") || new URLSearchParams(locationLike?.search || "").has("desktop"));
 
 export const API_BASE: string = String(
   env.VITE_API_BASE || "https://stats.helloween2610.workers.dev",
@@ -22,4 +24,4 @@ export const DATA_SOURCE: "Server" | "Mẫu" =
 export const FETCH_TIMEOUT_MS = 12000;
 
 // Token chỉ đọc không ghép bài / đổi quy tắc được: khi đó hai việc này chỉ mô phỏng trên máy.
-export const CAN_WRITE = !BROWSER_PREVIEW && !API_TOKEN.startsWith("read_");
+export const CAN_WRITE = !API_TOKEN.startsWith("read_");

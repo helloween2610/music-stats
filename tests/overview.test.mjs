@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { build } from 'esbuild';
 
 const built = await build({
-  stdin: { contents: `export { songRankTimeline, songRankColor, ranksWithHistoricalGaps } from './src/lib/song-rank-history'; export { parentPage, rememberParent } from './src/lib/navigation'; export { newAdditions } from '../../server/src/newAdditions'; export { monthWeeks, stackMonthWeeks, MonthWeeksChart } from './src/lib/month-weeks'; export { vnHour, vnWeekdayIndex } from './src/lib/fmt'; export { createElement } from 'react'; export { renderToStaticMarkup } from 'react-dom/server'; export { RecentScreen, ArtistsAllScreen, PeriodTopScreen, Top100Screen, TrendScreen, OverviewScreen } from './src/screens/main'; export { periodRankHistory, rankCheckpoints } from '../../server/src/periodHistory'; export { periodSongRank } from '../../server/src/periodRank'; export { dailyThisWeek, hourlyToday } from '../../server/src/today'; export { overview, overviewRange } from '../../server/src/overview'; export { buildVM } from './src/vm'; export { BASE, TABS, pathOf } from './src/state'; export { invalidate } from './src/lib/api'; export * from './src/lib/list-preferences';`, resolveDir: process.cwd(), loader: 'ts' },
+  stdin: { contents: `export { songRankTimeline, songRankColor, ranksWithHistoricalGaps } from './src/lib/song-rank-history'; export { songHistoryChart } from './src/lib/charts'; export { parentPage, rememberParent } from './src/lib/navigation'; export { newAdditions } from '../../server/src/newAdditions'; export { monthWeeks, stackMonthWeeks, MonthWeeksChart } from './src/lib/month-weeks'; export { vnHour, vnWeekdayIndex } from './src/lib/fmt'; export { createElement } from 'react'; export { renderToStaticMarkup } from 'react-dom/server'; export { MonthlySummaryReadout } from './src/components/month-summary-popup'; export { RecentScreen, ArtistsAllScreen, PeriodTopScreen, Top100Screen, TrendScreen, OverviewScreen } from './src/screens/main'; export { periodRankHistory, rankCheckpoints } from '../../server/src/periodHistory'; export { periodSongRank } from '../../server/src/periodRank'; export { dailyThisWeek, hourlyToday } from '../../server/src/today'; export { overview, overviewRange } from '../../server/src/overview'; export { buildVM } from './src/vm'; export { BASE, TABS, pathOf } from './src/state'; export { invalidate } from './src/lib/api'; export * from './src/lib/list-preferences';`, resolveDir: process.cwd(), loader: 'ts' },
   bundle:true, write:false, format:'esm', platform:'browser',
   define:{'import.meta.env':'{}','process.env.NODE_ENV':'"production"'},
 });
@@ -17,7 +17,9 @@ function fixture() {
     CREATE TABLE plays (track_id TEXT, play_date TEXT, hour INTEGER);
     INSERT INTO tracks VALUES ('TRA','A','Artist A',NULL,3600,'A','Album A','Rock'), ('TRB','B','Artist B',NULL,1800,'B','Album B','Pop');
     INSERT INTO plays VALUES ('TRA','2026-09-27',9), ('TRA','2026-09-28',10), ('TRA','2026-09-30',11),
-      ('TRB','2026-10-01',12), ('TRA','2026-10-02',13), ('TRB','2026-10-03',14), (NULL,'2026-10-02',15);`);
+      ('TRB','2026-10-01',12), ('TRA','2026-10-02',13), ('TRB','2026-10-03',14), (NULL,'2026-10-02',15);
+    ALTER TABLE tracks ADD COLUMN rank_weight REAL NOT NULL DEFAULT 1;
+    ALTER TABLE tracks ADD COLUMN rank_weight_custom REAL;`);
   const calls = [];
   const env = { LASTFM_FROM:'2025-01-01', DB:{
     prepare(sql) { return {bind(...args) {return {sql,args, async all() { return { results: db.prepare(sql).all(...args) }; }};}}; },
@@ -37,12 +39,26 @@ test('monthly overview defaults use the current Vietnam weekday and hour', () =>
   assert.equal(app.vnHour(now), 1);
 });
 
+test('compact monthly-hours readout exposes its month as the summary trigger', () => {
+  const c={p:{...app.BASE},screen:'overview',id:null,set:()=>{},go:()=>{},goTab:()=>{},later:()=>{},ptoast:()=>{}};
+  const html=app.renderToStaticMarkup(app.createElement(app.MonthlySummaryReadout,{
+    value:'T03/25·2d 12h 36m·#1 Aephanemer',c,
+    months:[{label:'T03/25',period:'2025-03',index:0}],onMonthSelect:()=>{},
+  }));
+  assert.match(html,/aria-label="Mở tổng kết T03\/25; nhấn giữ để chọn tháng"/);
+  assert.match(html,/>T03\/25<\/button>/);
+  assert.match(html,/>2d 12h 36m</);
+  assert.match(html,/>#1 Aephanemer</);
+});
+
 test('current week starts Monday across month and year boundaries, including Sunday', () => {
   assert.deepEqual(app.overviewRange('week','2026-10-02'),{from:'2026-09-28',to:'2026-10-02'});
   assert.deepEqual(app.overviewRange('week','2026-10-04'),{from:'2026-09-28',to:'2026-10-04'});
   assert.deepEqual(app.overviewRange('week','2026-10-05'),{from:'2026-10-05',to:'2026-10-05'});
   assert.deepEqual(app.overviewRange('week','2027-01-01'),{from:'2026-12-28',to:'2027-01-01'});
   assert.deepEqual(app.overviewRange('2024-02','2024-02-29'),{from:'2024-02-01',to:'2024-02-29'});
+  assert.deepEqual(app.overviewRange('15d','2026-10-18'),{from:'2026-10-04',to:'2026-10-18'});
+  assert.deepEqual(app.overviewRange('1m','2026-10-18'),{from:'2026-09-19',to:'2026-10-18'});
 });
 
 test('weekly overview SQL filters totals, lists, and day/hour series to Monday–today', async () => {
@@ -105,7 +121,7 @@ test('period drill-down returns beyond the preview limit with the same leading o
   const {env, db} = fixture();
   try {
     for (let i=0;i<35;i++) {
-      db.prepare('INSERT INTO tracks VALUES (?,?,?,?,?,?,?,?)').run('TR'+i, 'Song'+i, 'Artist'+i, null, 100+i, 'AL'+i, 'Album'+i, 'Rock');
+      db.prepare('INSERT INTO tracks(id,title,artist,album_artist,duration_s,album_id,album,genre) VALUES (?,?,?,?,?,?,?,?)').run('TR'+i, 'Song'+i, 'Artist'+i, null, 100+i, 'AL'+i, 'Album'+i, 'Rock');
       db.prepare('INSERT INTO plays VALUES (?,?,?)').run('TR'+i, '2026-09-29', 10);
     }
     const preview=await app.overview(env,'week','2026-10-02');
@@ -306,44 +322,46 @@ test('all-time summary highlights notable recent library additions and rising to
   ]);
 });
 
-test('Today opens the same monthly ranking source and the displayed month, including January rollover', async () => {
-  for (const [date, hasCurrent, expectedDate, expectedMonth] of [
-    ['2026-10-02', true, '2026-10-02', '2026-10'],
-    ['2026-10-02', false, '2026-09-30', '2026-09'],
-    ['2027-01-01', false, '2026-12-31', '2026-12'],
-  ]) {
-    app.invalidate(()=>true);
-    const row={rank:1,track_id:'TR1',title:'Ranked song '+expectedMonth,artist:'Artist',plays:7};
-    const paths=[], navigation=[];
-    const period={plays:hasCurrent?7:0,tracks:1,artists:1};
-    globalThis.fetch=async url=>{
-      const u=new URL(url),path=u.pathname+u.search; paths.push(path);
-      let body;
-      if(u.pathname==='/summary') body={asOf:date,week:period,month:period,year:period,total:{plays:7,songs:1,artists:1}};
-      else if(u.pathname==='/artwork') body={artists:{},tracks:{},albums:{}};
-      else if(u.pathname==='/overview') body={totals:{plays:7},months:[],byHour:[{k:22,plays:7}]};
-      else if(u.pathname==='/daily') body={byHour:[],days:[{date,plays:0,lastWeek:0,record:0}]};
-      else if(u.pathname==='/charts/songs') body={rows:hasCurrent||u.searchParams.has('asOf')?[row]:[]};
-      else body={rows:[]};
-      return new Response(JSON.stringify(body),{status:200});
-    };
-    const p={...app.BASE,scope:'All time'};
-    const ctx={p,screen:'today',id:null,set:fn=>Object.assign(p,fn(p)),go:(...args)=>navigation.push(args),goTab:()=>assert.fail('must not open overview'),later:()=>{},ptoast:()=>{}};
-    for(let i=0;i<4;i++){app.buildVM(ctx);await new Promise(setImmediate);}
-    const today=app.buildVM(ctx);
-    assert.equal(today.unavailable,undefined);
-    assert.equal(today.rd.weekHour,'22h–23h · 7 lượt');
-    assert.ok(paths.includes('/overview?scope=week'));
-    today.viewTodaySongs();
-    assert.deepEqual(navigation,[['periodTop',`monthSongs~${expectedMonth}~${expectedDate}`]]);
-    const fullCtx={...ctx,screen:'periodTop',id:navigation[0][1]};
-    app.buildVM(fullCtx);await new Promise(setImmediate);
-    const full=app.buildVM(fullCtx);
-    assert.ok(paths.includes(`/charts/songs?window=month&asOf=${expectedDate}&limit=5000`));
-    assert.equal(full.periodRows[0].title,today.top5[0].title);
-    assert.equal(full.periodRows[0].rank,today.top5[0].rank);
-    assert.equal(p.scope,'All time');
-  }
+test('Today shows rolling 15-day songs before recent, caps each artist at three, and adds artist rank movement', async () => {
+  app.invalidate(()=>true);
+  const date='2026-10-18', paths=[], navigation=[];
+  const rolling=[
+    ...Array.from({length:4},(_,i)=>({rank:i+1,track_id:'A'+i,title:'Artist A '+i,artist:'Artist A',plays:20-i})),
+    {rank:5,track_id:'B1',title:'Artist B 1',artist:'Artist B',plays:15},
+    {rank:6,track_id:'C1',title:'Artist C 1',artist:'Artist C',plays:14},
+  ];
+  const period={plays:70,tracks:6,artists:3};
+  globalThis.fetch=async url=>{
+    const u=new URL(url),path=u.pathname+u.search; paths.push(path);
+    let body;
+    if(u.pathname==='/summary') body={asOf:date,week:period,month:period,year:period,total:{plays:70,songs:6,artists:3}};
+    else if(u.pathname==='/artwork') body={artists:{},tracks:{},albums:{}};
+    else if(u.pathname==='/overview' && u.searchParams.get('scope')==='week') body={totals:period,months:[],byHour:[]};
+    else if(u.pathname==='/overview' && u.searchParams.get('scope')==='15d') body={totals:period,months:[],artists:[],songs:rolling,albums:[],genres:[]};
+    else if(u.pathname==='/daily') body={byHour:[],days:[{date,plays:0,lastWeek:0,record:0}]};
+    else if(u.pathname==='/recent') body={rows:[]};
+    else if(u.pathname==='/artists/week') body={rows:[{artist:'Artist A',plays:22,byDay:[1,2,3,4,5,6,1]}]};
+    else if(u.pathname==='/charts/songs' && u.searchParams.get('window')==='15d') body={rows:rolling};
+    else if(u.pathname==='/charts/artists' && u.searchParams.has('asOf')) body={rows:[{artist:'Artist A',rank:29}]};
+    else if(u.pathname==='/charts/artists') body={rows:[{artist:'Artist A',rank:22}]};
+    else body={rows:[]};
+    return Response.json(body);
+  };
+  const p={...app.BASE,scope:'All time'};
+  const ctx={p,screen:'today',id:null,set:fn=>Object.assign(p,fn(p)),go:(...args)=>navigation.push(args),goTab:()=>assert.fail('must not open overview'),later:()=>{},ptoast:()=>{}};
+  for(let i=0;i<5;i++){app.buildVM(ctx);await new Promise(setImmediate);}
+  const today=app.buildVM(ctx);
+  assert.equal(today.top5Title,'Top songs · 15 ngày');
+  assert.deepEqual(today.top5.map(row=>row.artist),['Artist A','Artist A','Artist A','Artist B','Artist C']);
+  assert.deepEqual([today.weekTable[0].rank,today.weekTable[0].rankChange],[22,7]);
+  today.viewTodaySongs();
+  assert.deepEqual(navigation,[['periodTop','songs~15d~2026-10-18',{periodFilter:'Tất cả',songView:'Danh sách'}]]);
+  const fullCtx={...ctx,screen:'periodTop',id:navigation[0][1]};
+  for(let i=0;i<3;i++){app.buildVM(fullCtx);await new Promise(setImmediate);}
+  const full=app.buildVM(fullCtx);
+  assert.ok(paths.some(path=>path.startsWith('/overview?scope=15d&asOf=2026-10-18')));
+  assert.equal(full.periodListOnly,true);
+  assert.deepEqual(full.songViewTabs.map(tab=>tab.label),['Danh sách']);
 });
 
 test('artist play sorting displays play positions instead of unrelated hours ranks', async () => {
@@ -585,6 +603,33 @@ test('Trends no longer loads period boards and hides the standalone history char
   assert.ok(html.includes('Nghệ sĩ đang lên'));
 });
 
+test('Trends month chips load the selected historical month', async () => {
+  app.invalidate(()=>true);
+  const requests=[];
+  globalThis.fetch=async url=>{
+    const u=new URL(url);requests.push(u.pathname+u.search);
+    if(u.pathname==='/summary') return Response.json({asOf:'2026-10-18',week:{},month:{},year:{},total:{}});
+    if(u.pathname==='/artwork') return Response.json({artists:{},tracks:{},albums:{}});
+    if(u.pathname==='/overview') return Response.json({totals:{plays:9,songs:3,artists:3,albums:3,genres:1},months:[{month:'2026-08',plays:9,hours:2}],monthArtists:[{month:'2026-08',artist:'Artist A',hours:1}],artists:[{name:'Artist A',hours:1,plays:4},{name:'Artist B',hours:.6,plays:3},{name:'Artist C',hours:.4,plays:2}],songs:[{track_id:'A',title:'Song A',artist:'Artist A',plays:4,hours:1},{track_id:'B',title:'Song B',artist:'Artist B',plays:3,hours:.6},{track_id:'C',title:'Song C',artist:'Artist C',plays:2,hours:.4}],albums:[{name:'Album A',artist:'Artist A',plays:4,hours:1},{name:'Album B',artist:'Artist B',plays:3,hours:.6},{name:'Album C',artist:'Artist C',plays:2,hours:.4}],genres:[],byDay:[],byWeekday:[],byHour:[]});
+    return Response.json({rows:[],artists:[],songs:[]});
+  };
+  const p={...app.BASE,trendMode:'Tháng',trendAsOf:'2026-08-31',scope:'Tháng'};
+  const base={p,screen:'overview',id:'trend~2026-08-31',set:fn=>Object.assign(p,fn(p)),go:()=>{},goTab:()=>{},later:()=>{},ptoast:()=>{}};
+  for(let i=0;i<5;i++){app.buildVM(base);await new Promise(setImmediate);}
+  const vm=app.buildVM(base);
+  assert.ok(requests.some(path=>path.startsWith('/overview?scope=2026-08&asOf=2026-08-31')));
+  assert.equal(vm.trendMonthChips.find(chip=>chip.active).label,'T08/26');
+  assert.equal(vm.dayTitle,'M08/26');
+  assert.equal(vm.topArtistsTitle,'Top 6 Artists M08/26');
+  assert.equal(vm.topSongsTitle,'Top 10 Songs M08/26');
+  assert.deepEqual(vm.trendTabs.map(tab=>tab.label),['Đang lên hạng','Tháng 10','Năm 2026']);
+  assert.equal(vm.rd.hours,'T08/26·2h·#1 Artist A');
+  assert.deepEqual(vm.monthSummary.blocks.map(block=>block.label),['Top artist','Top album','Top song','Tăng hạng']);
+  assert.deepEqual(vm.monthSummary.blocks.slice(0,3).map(block=>block.rows.length),[3,3,3]);
+  vm.trendMonthChips.find(chip=>chip.label==='T07/26').onTap();
+  assert.equal(p.trendAsOf,'2026-07-31');
+});
+
 
 test('month week comparison preserves Monday–Sunday slots and excludes outside/future days', () => {
   const sep=app.monthWeeks('2026-09','2026-10-02',Array.from({length:30},(_,i)=>i+1));
@@ -799,6 +844,17 @@ test('period list preference persists and limits both kinds, while All time alwa
   assert.equal(app.periodListSize(70),25);
 });
 
+test('Top Song always renders 100 rows regardless of the period list preference',()=>{
+  const rows=Array.from({length:120},(_,i)=>({title:`Song ${i+1}`,artist:'Band',rank:i+1}));
+  for(const size of [25,50,100]) {
+    const html=app.renderToStaticMarkup(app.createElement(app.Top100Screen,{
+      vm:{top100Rows:rows,songViewTabs:[],songRankMonthChips:[]},
+      c:{p:{periodListSize:size}},
+    }));
+    assert.equal((html.match(/class="row song-row(?: [^"]*)?"/g)||[]).length,100);
+  }
+});
+
 test('artist period promotion uses the compact grouped rows from Trends',()=>{
   const row={an:'Steady',name:'Steady',ini:'ST',sub:'3x · 3h',ranks:'#13 → #10',rise:3};
   const vm={periodIsArtists:true,periodRisingNote:'Tăng hạng All time',periodRisingGroups:[{month:'T09/26',rows:[row]}],periodRows:[row],periodSortChips:[],periodEmpty:''};
@@ -889,6 +945,125 @@ test('song rank timeline starts May 2024, carries ranks through missing months, 
   assert.deepEqual(result.labels.slice(-2),['09/26','Hiện tại']);
   assert.deepEqual(result.ranks.slice(-2),[60,45]);
   assert.equal(app.songRankTimeline([], '2026-10-03').ranks.at(-1),null);
+});
+
+test('song detail monthly chart renders the full listening history',async()=>{
+  app.invalidate(()=>true);
+  globalThis.fetch=async url=>{
+    const u=new URL(url);
+    if(u.pathname==='/song/TR-FULL') return Response.json({
+      track:{id:'TR-FULL',title:'Full History',artist:'Artist',album:'Album',in_library:1},
+      allTime:{rank:24,level:1,plays:110,minutes:400},rating:null,plays:{logged:5},
+      months:[{month:'2024-05',plays:2},{month:'2026-10',plays:3}],rankHistory:[{period:'2024-05',rank:219},{period:'2026-07',rank:224},{period:'2026-10',rank:24}],
+    });
+    if(u.pathname==='/artwork') return Response.json({artists:{},albums:{},tracks:{}});
+    return Response.json({rows:[]});
+  };
+  const c={p:{...app.BASE},screen:'song',id:'TR-FULL',set:()=>{},go:()=>{},goTab:()=>{},later:()=>{},ptoast:()=>{}};
+  for(let i=0;i<4;i++){app.buildVM(c);await new Promise(setImmediate);}
+  const vm=app.buildVM(c),html=app.renderToStaticMarkup(vm.ch.sh);
+  assert.match(html,/05\/24/);
+  assert.match(html,/10\/26/);
+  assert.match(html,/Lượt nghe và lịch sử hạng theo tháng/);
+  assert.match(html,/var\(--song-history-plays\)/);
+  assert.match(html,/var\(--song-history-rank\)/);
+  assert.match(html,/#1/);
+  assert.match(html,/#110/);
+  assert.match(html,/#219/);
+  assert.match(html,/#224/);
+  assert.match(html,/>#24<\/text>/);
+  assert.doesNotMatch(html,/>Lượt nghe<\/text>/);
+  assert.doesNotMatch(html,/>Hạng<\/text>/);
+  assert.equal((html.match(/mix-blend-mode:screen/g) || []).length,2);
+  assert.equal(vm.rd.sh,'T10/26 · 3 lượt · hạng #24');
+});
+
+test('song detail All time change compares with the best recorded rank',async()=>{
+  app.invalidate(()=>true);
+  globalThis.fetch=async url=>{
+    const u=new URL(url);
+    if(u.pathname==='/song/TR-BEST') return Response.json({
+      track:{id:'TR-BEST',title:'Best Rank',artist:'Artist',album:'Album',in_library:1},
+      allTime:{rank:87,level:1,plays:56,minutes:240},rating:null,plays:{logged:5},months:[],
+      rankHistory:[{period:'T06/24',rank:19},{period:'T09/26',rank:68}],
+    });
+    if(u.pathname==='/artwork') return Response.json({artists:{},albums:{},tracks:{}});
+    return Response.json({rows:[]});
+  };
+  const c={p:{...app.BASE},screen:'song',id:'TR-BEST',set:()=>{},go:()=>{},goTab:()=>{},later:()=>{},ptoast:()=>{}};
+  for(let i=0;i<4;i++){app.buildVM(c);await new Promise(setImmediate);}
+  const vm=app.buildVM(c),html=app.renderToStaticMarkup(vm.song.chg);
+  assert.match(html,/▼68/);
+});
+
+test('song history uses the Top 100 scale when its first rank is inside the Top 100',()=>{
+  const chart=app.songHistoryChart([1,2,3],[80,105,60],['01/26','02/26','03/26'],{currentRank:60});
+  const html=app.renderToStaticMarkup(chart);
+  assert.match(html,/>#1<\/text>/);
+  assert.match(html,/>#50<\/text>/);
+  assert.match(html,/>#100<\/text>/);
+  assert.match(html,/02\/26 · hạng #105/);
+  assert.equal((html.match(/mix-blend-mode:screen/g) || []).length,2);
+});
+
+test('song history rounds the middle rank milestone to a 25-rank step',()=>{
+  const chart=app.songHistoryChart([0,1,2],[229,213,208],['07/25','08/25','09/25'],{currentRank:88});
+  const html=app.renderToStaticMarkup(chart);
+  assert.match(html,/>#125<\/text>/);
+  assert.doesNotMatch(html,/>#115<\/text>/);
+  assert.match(html,/>#229<\/text>/);
+});
+
+test('artist and album history use the Top 50 scale when their first rank is inside the Top 50',()=>{
+  const chart=app.songHistoryChart([1,2,3],[23,55,9],['01/26','02/26','03/26'],{currentRank:9,rankThreshold:50});
+  const html=app.renderToStaticMarkup(chart);
+  assert.match(html,/>#1<\/text>/);
+  assert.match(html,/>#25<\/text>/);
+  assert.match(html,/>#50<\/text>/);
+  assert.match(html,/02\/26 · hạng #55/);
+  assert.equal((html.match(/mix-blend-mode:screen/g) || []).length,2);
+});
+
+test('current rank replaces an overlapping axis milestone with a stronger unframed label',()=>{
+  const chart=app.songHistoryChart([1,2],[50,40],['01/26','02/26'],{currentRank:50,rankThreshold:50});
+  const html=app.renderToStaticMarkup(chart);
+  assert.equal((html.match(/>#50<\/text>/g) || []).length,1);
+  assert.equal((html.match(/data-current-rank="true"/g) || []).length,1);
+  assert.doesNotMatch(html,/<rect[^>]+data-current-rank/);
+  assert.match(html,/font-weight:800/);
+  assert.match(html,/fill:var\(--song-history-current-rank\)/);
+});
+
+test('artist detail merges its full listening and All time rank history',async()=>{
+  app.invalidate(()=>true);
+  globalThis.fetch=async url=>{
+    const u=new URL(url);
+    if(u.pathname==='/artist/Aep') return Response.json({
+      artist:'Aep',asOf:'2026-10-17',ranks:{at:1},library:{tracks:4,albums:1},allTime:{plays:20,hours:2},logged:{days:3},months:[{month:'2024-05',hours:1,totalHours:150},{month:'2026-10',hours:1,totalHours:22}],weeks:[],topSongs:[{track_id:'TR-AEP',title:'Song',rank:1,plays:20}],
+    });
+    if(u.pathname==='/history/artists') return Response.json({periods:['T05/24','T09/26','T10/26'],rows:[{artist:'Aep',history:[{period:'T05/24',rank:3},{period:'T09/26',rank:2},{period:'T10/26',rank:1}]}]});
+    if(u.pathname==='/history/song-ranks') return Response.json({periods:['T05/24'],rows:[{track_id:'TR-AEP',best:{period:'T05/24',rank:12},history:[{period:'T05/24',rank:12}]}]});
+    if(u.pathname==='/charts/songs') return Response.json({rows:[{track_id:'TR-AEP',rank:20}]});
+    if(u.pathname==='/artwork') return Response.json({artists:{},albums:{},tracks:{}});
+    return Response.json({rows:[]});
+  };
+  const c={p:{...app.BASE},screen:'artist',id:'Aep',set:()=>{},go:()=>{},goTab:()=>{},later:()=>{},ptoast:()=>{}};
+  for(let i=0;i<5;i++){app.buildVM(c);await new Promise(setImmediate);}
+  const vm=app.buildVM(c),html=app.renderToStaticMarkup(vm.ch.ah);
+  assert.equal(vm.artist.songs[0].allTimeChange,-8);
+  assert.match(html,/Giờ nghe và lịch sử hạng theo tháng của Aep/);
+  assert.match(html,/05\/24/);
+  assert.match(html,/10\/26/);
+  assert.match(html,/Aep/);
+  assert.doesNotMatch(html,/>Aep<\/text>/);
+  assert.doesNotMatch(html,/>Tổng<\/text>/);
+  assert.match(html,/>#1<\/text>/);
+  assert.match(html,/#2/);
+  assert.match(html,/#3/);
+  assert.match(html,/120h/);
+  assert.doesNotMatch(html,/150h/);
+  assert.equal(vm.ch.ar,undefined);
+  assert.equal(vm.rd.ah,'T10/26 · 1h · hạng #1');
 });
 
 

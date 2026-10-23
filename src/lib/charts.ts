@@ -8,8 +8,8 @@ type Any = any;
 const TXT = { fill: "var(--text3)", fontSize: "var(--chart-font-size, 10px)", fontFamily: "-apple-system,Roboto,system-ui,sans-serif", fontVariantNumeric: "tabular-nums" };
 const lbl = (x: number, y: number, t: ReactNode, a = "middle", ex: Any = {}) =>
   h("text", { x, y, textAnchor: a, style: { ...TXT, ...ex } }, t);
-const frame = (W: number, H: number, k: ReactNode[]) =>
-  h("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", style: { display: "block", overflow: "visible" } }, ...k);
+const frame = (W: number, H: number, k: ReactNode[], attrs: Any = {}) =>
+  h("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", style: { display: "block", overflow: "visible" }, ...attrs }, ...k);
 const niceMax = (v: number) => {
   const p = Math.pow(10, Math.floor(Math.log10(v || 1)));
   return ([1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((m) => m * p >= v) as number) * p;
@@ -29,7 +29,7 @@ function grid(W: number, top: number, bot: number, max: number, n: number, tf: (
 
 export function vbars(vals: number[], labels: string[], o: Any = {}) {
   const W = o.w || 342, H = o.h || 140, top = 8, bot = H - 18, pw = W - 30, n = vals.length, step = pw / n, bw = Math.max(2, step * (o.fill || 0.64));
-  const max = niceMax(o.cap || Math.max(1, ...vals)), k = grid(W, top, bot, max, o.w && o.w < 200 ? 2 : 3);
+  const max = o.exactMax || niceMax(o.cap || Math.max(1, ...vals)), k = grid(W, top, bot, max, o.w && o.w < 200 ? 2 : 3);
   vals.forEach((v, i) => {
     const x = i * step + (step - bw) / 2, over = v > max, hh = (Math.min(v, max) / max) * (bot - top), y = bot - hh, dim = o.sel != null && o.sel !== i;
     k.push(h("rect", { x, y, width: bw, height: Math.max(hh, v > 0 ? 1.5 : 0), rx: Math.min(2, bw / 2), style: { fill: (o.colors && o.colors[i]) || "var(--accent)", opacity: dim ? 0.38 : 1 } }));
@@ -91,22 +91,64 @@ export function listeningClock(vals: number[], o: { sel?: number; onSel?: Sel; c
   return h("svg", { viewBox: `0 0 ${size} ${size}`, width: "100%", role: "group", "aria-label": "Đồng hồ nghe nhạc 24 giờ", style: { display: "block" } }, ...k);
 }
 
+const smoothPath = (points: [number, number][], curve = 0.26) => {
+  if (!points.length) return "";
+  if (points.length === 1) return `M${points[0][0]},${points[0][1]}`;
+  let d = `M${points[0][0]},${points[0][1]}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const [x0, y0] = points[i], [x1, y1] = points[i + 1];
+    const dx = (x1 - x0) * curve;
+    d += ` C${x0 + dx},${y0} ${x1 - dx},${y1} ${x1},${y1}`;
+  }
+  return d;
+};
+
 export function lineChart(series: Any[], labels: string[], o: Any = {}) {
-  const W = o.w || 342, H = o.h || 140, top = 10, bot = H - 18, pw = W - 34, n = labels.length;
+  const W = o.w || 342, H = o.h || 140, n = labels.length;
+  const legend = Array.isArray(o.legend) ? o.legend : [];
+  let lx = 0, lr = 0;
+  const legendItems = legend.map((it: Any) => {
+    const text = String(it.name || ""), itemW = Math.min(170, 22 + text.length * 6.6);
+    if (lx && lx + itemW > W - 28) { lr++; lx = 0; }
+    const out = { ...it, x: lx, y: 13 + lr * 18, text };
+    lx += itemW;
+    return out;
+  });
+  const legendH = legendItems.length ? (lr + 1) * 18 + 8 : 0;
+  const top = o.top ?? 10 + legendH, bot = H - 18, pw = W - 34;
   const max = o.exactMax ?? niceMax(o.max || Math.max(1, ...series.flatMap((s) => s.vals)));
   const X = (i: number) => 2 + (i * pw) / Math.max(1, n - 1), Y = (v: number) => bot - (v / max) * (bot - top);
-  const k = o.ticks ? o.ticks.flatMap((v:number) => [
+  const k: ReactNode[] = [];
+  legendItems.forEach((it: Any) => {
+    k.push(h("circle", { cx: it.x + 5, cy: it.y - 3, r: 4, style: { fill: it.color, opacity: it.opacity ?? 1 } }));
+    k.push(lbl(it.x + 14, it.y, it.text, "start", { fill: "var(--text3)", fontSize: 11, fontWeight: 600 }));
+  });
+  k.push(...(o.ticks ? o.ticks.flatMap((v:number) => [
     h("line",{x1:0,x2:W-26,y1:Y(v),y2:Y(v),style:{stroke:"var(--line)",strokeWidth:1}}),
     lbl(W,Y(v)+3,o.tf ? o.tf(v) : vn(v),"end"),
-  ]) : grid(W, top, bot, max, 3, o.tf);
+  ]) : grid(W, top, bot, max, 3, o.tf)));
   if (o.sel != null) k.push(h("line", { x1: X(o.sel), x2: X(o.sel), y1: top - 4, y2: bot, style: { stroke: "var(--text3)", strokeDasharray: "3 3" } }));
-  series.forEach((s) => {
-    const pts = s.vals.map((v: number, i: number) => `${X(i)},${Y(v)}`).join(" ");
-    if (s.area) k.push(h("polygon", { points: `${X(0)},${bot} ${pts} ${X(n - 1)},${bot}`, style: { fill: s.color, opacity: 0.14 } }));
-    k.push(h("polyline", { points: pts, style: { fill: "none", stroke: s.color, strokeWidth: s.w || 2, strokeLinejoin: "round", strokeLinecap: "round" } }));
+  const defs: ReactNode[] = [];
+  series.forEach((s, si) => {
+    const points = s.vals.map((v: number, i: number) => [X(i), Y(v)] as [number, number]);
+    const pts = points.map((p) => `${p[0]},${p[1]}`).join(" ");
+    const curved = o.smooth || s.smooth;
+    const lineD = curved ? smoothPath(points, typeof curved === "number" ? curved : 0.26) : "";
+    if (s.area) {
+      const fillId = o.gradient && curved ? `lcg-${si}` : "";
+      if (fillId) defs.push(h("linearGradient", { id: fillId, x1: "0", y1: top, x2: "0", y2: bot, gradientUnits: "userSpaceOnUse" },
+        h("stop", { offset: "0%", stopColor: s.color, stopOpacity: s.areaOpacity ?? 0.18 }),
+        h("stop", { offset: "100%", stopColor: s.color, stopOpacity: 0 })
+      ));
+      if (curved) k.push(h("path", { d: `${lineD} L${X(n - 1)},${bot} Q${X(n - 1)},${bot + 2} ${X(n - 1) - 8},${bot} L${X(0) + 8},${bot} Q${X(0)},${bot + 2} ${X(0)},${bot} Z`, style: { fill: fillId ? `url(#${fillId})` : s.color, opacity: fillId ? 1 : s.areaOpacity ?? 0.14 } }));
+      else k.push(h("polygon", { points: `${X(0)},${bot} ${pts} ${X(n - 1)},${bot}`, style: { fill: s.color, opacity: s.areaOpacity ?? 0.14 } }));
+    }
+    if (curved) k.push(h("path", { d: lineD, style: { fill: "none", stroke: s.color, strokeWidth: s.w || 2, strokeLinejoin: "round", strokeLinecap: "round", opacity: s.opacity ?? 1, strokeDasharray: s.dash || undefined } }));
+    else k.push(h("polyline", { points: pts, style: { fill: "none", stroke: s.color, strokeWidth: s.w || 2, strokeLinejoin: "round", strokeLinecap: "round", opacity: s.opacity ?? 1, strokeDasharray: s.dash || undefined } }));
     (s.dots || []).forEach((i: number) => k.push(h("circle", { cx: X(i), cy: Y(s.vals[i]), r: 3, style: { fill: "var(--surface)", stroke: s.color, strokeWidth: 1.5 } })));
-    if (o.sel != null) k.push(h("circle", { cx: X(o.sel), cy: Y(s.vals[o.sel]), r: 4.5, style: { fill: s.color, stroke: "var(--surface)", strokeWidth: 2 } }));
+    if (o.sel != null && s.select !== false) k.push(h("circle", { cx: X(o.sel), cy: Y(s.vals[o.sel]), r: 4.5, style: { fill: s.color, stroke: "var(--surface)", strokeWidth: 2 } }));
   });
+  if (defs.length) k.unshift(h("defs", null, ...defs));
   labels.forEach((l, i) => { if (l) k.push(lbl(X(i), H - 4, l)); });
   if (o.onSel) {
     const st = pw / Math.max(1, n - 1);
@@ -115,13 +157,92 @@ export function lineChart(series: Any[], labels: string[], o: Any = {}) {
   return frame(W, H, k);
 }
 
+export function songHistoryChart(plays: number[], ranks: (number | null)[], labels: string[], o: Any = {}) {
+  const W = o.w || 342, H = o.h || 188, n = Math.max(1, labels.length), left = 28, right = W - 32, top = 12, bot = H - 18;
+  const secondary: (number | null)[] = Array.isArray(o.secondaryValues) ? o.secondaryValues : [];
+  const playMax = o.valueMax || niceMax(Math.max(1, ...plays, ...secondary.filter((v): v is number => v != null && Number.isFinite(v))));
+  const currentRank = Number(o.currentRank);
+  const firstRank = ranks.find((rank): rank is number => rank != null && Number.isFinite(rank) && rank > 0);
+  const rankThreshold = Math.max(2, Number(o.rankThreshold) || 100);
+  const rankReference = firstRank || (Number.isFinite(currentRank) && currentRank > 0 ? currentRank : rankThreshold);
+  const rankMax = rankReference <= rankThreshold ? rankThreshold : rankReference;
+  const X = (i: number) => left + (i * (right - left)) / Math.max(1, n - 1);
+  const playY = (v: number) => bot - (Math.min(playMax, Math.max(0, v)) / playMax) * (bot - top);
+  const rankY = (v: number) => top + ((Math.min(rankMax, Math.max(1, v)) - 1) / Math.max(1, rankMax - 1)) * (bot - top);
+  const playColor = o.playColor || "var(--song-history-plays)";
+  const rankColor = o.rankColor || "var(--song-history-rank)";
+  const secondaryColor = o.secondaryColor || "var(--text3)";
+  const k: ReactNode[] = [];
+  for (let i = 0; i <= 2; i++) {
+    const y = bot - ((bot - top) * i) / 2;
+    k.push(h("line", { x1: left, x2: right, y1: y, y2: y, style: { stroke: "var(--line)", strokeWidth: 1 } }));
+    const valueLabel = o.valueFormatter ? o.valueFormatter((playMax * i) / 2) : vn((playMax * i) / 2);
+    k.push(lbl(left - 5, y + 3, `${valueLabel}${o.valueSuffix || ""}`, "end", { fill: playColor }));
+  }
+  const hasCurrentRank = Number.isFinite(currentRank) && currentRank > 0;
+  const rankMidpoint = rankMax <= 50
+    ? Math.round((rankMax + 1) / 2)
+    : Math.min(rankMax - 1, Math.max(50, Math.round(((rankMax + 1) / 2) / 25) * 25));
+  const axisRanks = rankMax === rankThreshold
+    ? [1, Math.round(rankThreshold / 2), rankThreshold]
+    : [...new Set([1, rankMax > 2 ? rankMidpoint : rankMax, rankMax])];
+  const currentY = hasCurrentRank ? rankY(currentRank) : null;
+  axisRanks.filter((rank) => currentY == null || Math.abs(rankY(rank) - currentY) > 10)
+    .forEach((rank) => k.push(lbl(W, rankY(rank) + 3, `#${rank}`, "end", { fill: rankColor })));
+  if (hasCurrentRank) {
+    k.push(h("text", { x: W, y: currentY! + 3, textAnchor: "end", "data-current-rank": "true", style: { ...TXT, fill: "var(--song-history-current-rank)", fontWeight: 800 } }, `#${currentRank}`));
+  }
+  const playPoints = plays.map((v, i) => [X(i), playY(v)] as [number, number]);
+  const playPolyline = playPoints.map(([x, y]) => `${x},${y}`).join(" ");
+  k.push(h("polygon", { points: `${left},${bot} ${playPolyline} ${right},${bot}`, style: { fill: playColor, opacity: 0.14 } }));
+  k.push(h("polyline", { points: playPolyline, style: { fill: "none", stroke: playColor, strokeWidth: 2.2, strokeLinejoin: "round", strokeLinecap: "round", mixBlendMode: "screen" } }));
+  if (secondary.length) {
+    let secondaryPoints: string[] = [];
+    const flushSecondary = () => {
+      if (secondaryPoints.length > 1) k.push(h("polyline", { points: secondaryPoints.join(" "), style: { fill: "none", stroke: secondaryColor, strokeWidth: 1.7, strokeLinejoin: "round", strokeLinecap: "round" } }));
+      secondaryPoints = [];
+    };
+    secondary.forEach((value, i) => {
+      if (value == null || !Number.isFinite(value)) { flushSecondary(); return; }
+      secondaryPoints.push(`${X(i)},${playY(value)}`);
+    });
+    flushSecondary();
+  }
+  let rankPoints: string[] = [];
+  const flushRanks = () => {
+    if (rankPoints.length > 1) k.push(h("polyline", { points: rankPoints.join(" "), style: { fill: "none", stroke: rankColor, strokeWidth: 2.2, strokeLinejoin: "round", strokeLinecap: "round", mixBlendMode: "screen" } }));
+    rankPoints = [];
+  };
+  ranks.forEach((rank, i) => {
+    if (rank == null || !Number.isFinite(rank) || rank <= 0) { flushRanks(); return; }
+    rankPoints.push(`${X(i)},${rankY(rank)}`);
+    k.push(h("circle", { cx: X(i), cy: rankY(rank), r: i === o.sel ? 4.2 : 2.2, style: { fill: rankColor, stroke: i === o.sel ? "var(--surface)" : "none", strokeWidth: 2 } }, h("title", null, `${labels[i]} · hạng #${rank}`)));
+  });
+  flushRanks();
+  if (o.sel != null) {
+    k.push(h("line", { x1: X(o.sel), x2: X(o.sel), y1: top - 4, y2: bot, style: { stroke: "var(--text3)", strokeDasharray: "3 3" } }));
+    k.push(h("circle", { cx: X(o.sel), cy: playY(plays[o.sel] || 0), r: 4.5, style: { fill: playColor, stroke: "var(--surface)", strokeWidth: 2 } }));
+    const secondaryValue = secondary[o.sel];
+    if (secondaryValue != null && Number.isFinite(secondaryValue)) k.push(h("circle", { cx: X(o.sel), cy: playY(secondaryValue), r: 4.5, style: { fill: secondaryColor, stroke: "var(--surface)", strokeWidth: 2 } }));
+  }
+  const labelStep = Math.max(1, Math.ceil(labels.length / 5));
+  labels.forEach((label, i) => {
+    if (i === 0 || i === labels.length - 1 || i % labelStep === 0) k.push(lbl(X(i), H - 4, label));
+  });
+  if (o.onSel) {
+    const step = (right - left) / Math.max(1, n - 1);
+    labels.forEach((_, i) => k.push(hit(X(i) - step / 2, step, H, i, o.onSel)));
+  }
+  return frame(W, H, k, { role: "group", "aria-label": o.ariaLabel || "Lượt nghe và lịch sử hạng theo tháng" });
+}
+
 export function rankLine(vals: (number | null)[], labels: string[], o: Any = {}) {
-  const W = 342, H = 150, top = 12, bot = H - 18, pw = W - 34, n = vals.length, mx = Math.max(4, niceMax(Math.max(...vals.filter((v): v is number => v != null))));
+  const W = o.w || 342, H = o.h || 150, top = 12, bot = H - 18, pw = W - 34, n = vals.length, mx = Math.max(4, niceMax(Math.max(...vals.filter((v): v is number => v != null))));
   const X = (i: number) => 2 + (i * pw) / Math.max(1, n - 1), Y = (r: number) => top + ((r - 1) / (mx - 1)) * (bot - top);
   const k: ReactNode[] = [];
   [1, Math.round(mx / 2), mx].forEach((r) => {
     k.push(h("line", { x1: 0, x2: W - 26, y1: Y(r), y2: Y(r), style: { stroke: "var(--line)" } }));
-    k.push(lbl(W, Y(r) + 3, "#" + r, "end"));
+    k.push(lbl(W, Y(r) + 3, "#" + r, "end", { fill: o.color || "var(--song-history-rank)" }));
   });
   if (o.sel != null) k.push(h("line", { x1: X(o.sel), x2: X(o.sel), y1: top - 4, y2: bot, style: { stroke: "var(--text3)", strokeDasharray: "3 3" } }));
   let points: string[] = [];
@@ -140,7 +261,7 @@ export function rankLine(vals: (number | null)[], labels: string[], o: Any = {})
     const st = pw / Math.max(1, n - 1);
     vals.forEach((_, i) => k.push(hit(X(i) - st / 2, st, H, i, o.onSel)));
   }
-  return frame(W, H, k);
+  return frame(W, H, k, { role: "group", "aria-label": o.ariaLabel || "Lịch sử hạng theo tháng" });
 }
 
 export function bump(series: Any[], labels: string[], options: { maxRank?: number; height?: number; width?: number; labelEvery?: number; fullLabels?: boolean; labelWidth?: number } = {}) {
@@ -285,7 +406,7 @@ export function grouped(days: Any[], o: Any = {}) {
     k.push(lbl(cx, H - 4, d.l, "middle", o.sel === i ? { fill: "var(--text)", fontWeight: 700 } : {}));
   });
   if (o.onSel) days.forEach((_, i) => k.push(hit(i * step, step, H, i, o.onSel)));
-  return frame(W, H, k);
+  return frame(W, H, k, { className: "weekly-grouped-chart" });
 }
 
 export function spark(vals: number[], o: Any = {}) {

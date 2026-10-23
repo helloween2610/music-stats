@@ -1,4 +1,5 @@
-import { getFresh, postJson } from './api';
+import { getFresh, lastGood, postJson } from './api';
+import { validResponse } from './last-good';
 
 export type NotificationSettings={songRanks:boolean;artistRanks:boolean;artistRhythm:boolean;forgottenArtists:boolean;releases:boolean;dailyDigest:boolean};
 export type NotificationArtwork={artists:Record<string,string>;tracks:Record<string,string>;albums:Record<string,string>};
@@ -17,7 +18,15 @@ export const notificationSnapshot=()=>feed;
 export const subscribeNotifications=(fn:()=>void)=>{listeners.add(fn);return()=>listeners.delete(fn);};
 function loadNotificationArtwork(){
   if(artworkLoading)return artworkLoading;
-  artworkLoading=getFresh('/artwork').then(data=>publish({artwork:{artists:data?.artists||{},tracks:data?.tracks||{},albums:data?.albums||{}}})).catch(()=>{}).finally(()=>{artworkLoading=null;});
+  const saved=lastGood.get('/artwork');
+  if(saved&&validResponse('/artwork',saved.data)){
+    publish({artwork:{artists:saved.data.artists||{},tracks:saved.data.tracks||{},albums:saved.data.albums||{}}});
+    return Promise.resolve();
+  }
+  artworkLoading=getFresh('/artwork').then(data=>{
+    if(validResponse('/artwork',data))lastGood.set('/artwork',data);
+    publish({artwork:{artists:data?.artists||{},tracks:data?.tracks||{},albums:data?.albums||{}}});
+  }).catch(()=>{}).finally(()=>{artworkLoading=null;});
   return artworkLoading;
 }
 export function loadNotifications(force=false){

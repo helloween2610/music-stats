@@ -30,6 +30,18 @@ function Chart({children,clock=false,wide=false}:{children:ReactNode;clock?:bool
   },[clock,wide,children]);
   return <div ref={ref} className={`web-chart${clock?' web-clock':''}${wide?' web-chart-wide':''}`}>{children}</div>;
 }
+function HoursBreakdown({data}:{data?:{month:string;items:{label:string;color:string;value:number}[]} | null}) {
+  if(!data?.items?.length)return null;
+  const value=(n:number)=>`${String(Math.round(n*10)/10).replace('.',',')}h`;
+  return <div className="web-hours-breakdown" aria-label={`Giờ nghe theo nghệ sĩ ${data.month}`}>
+    <strong className="web-hours-breakdown-month">{data.month}</strong>
+    <div className="web-hours-breakdown-grid">{data.items.map((item,i)=><div className="web-hours-breakdown-item" key={i}>
+      <span className="web-hours-breakdown-color" style={{background:item.color}} />
+      <span className="web-hours-breakdown-name ell">{item.label}</span>
+      <strong className="num">{value(item.value)}</strong>
+    </div>)}</div>
+  </div>;
+}
 
 export function DesktopTodayScreen({vm,c}:P) {
   return <div className="web-dashboard">
@@ -41,8 +53,8 @@ export function DesktopTodayScreen({vm,c}:P) {
     </div>
     <div className="web-today-charts">
         <Panel title="Top nghệ sĩ tuần này" subtitle="Xếp theo lượt nghe">
-          <div className="web-week-table"><div className="web-week-row web-week-head"><span>Nghệ sĩ</span>{['T2','T3','T4','T5','T6','T7','CN','Tổng'].map(day=><span key={day}>{day}</span>)}</div>
-            {vm.weekTable.length?vm.weekTable.map((r:Row,k:number)=><ShortcutTarget key={k} entity={artistShortcut(r)}><button className="web-week-row num" onClick={r.onTap}><span className="web-person"><Thumb ini={r.ini||r.name.slice(0,2)} img={r.img} size={30} round/><span className="ell">{r.name}</span></span>{r.cells.map((cell:Row,j:number)=><span key={j} style={cell.s}>{cell.v}</span>)}<strong>{r.total}</strong></button></ShortcutTarget>):<p className="web-empty">Chưa có lượt nghe trong tuần.</p>}
+          <div className="web-week-table"><div className="web-week-row web-week-head"><span>Nghệ sĩ</span>{['T2','T3','T4','T5','T6','T7','CN'].map(day=><span key={day}>{day}</span>)}</div>
+            {vm.weekTable.length?vm.weekTable.map((r:Row,k:number)=><ShortcutTarget key={k} entity={artistShortcut(r)}><button className="web-week-row num" onClick={r.onTap}><span className="web-person"><Thumb ini={r.ini||r.name.slice(0,2)} img={r.img} size={30} round/><span className="ell">{r.name}</span><strong className="web-person-rank">#{r.rank ?? '–'}{r.rankChange ? <small style={{color:r.rankChange>0?'var(--up)':'var(--down)',marginLeft:4}}>{r.rankChange>0?'▲':'▼'}{Math.abs(r.rankChange)}</small>:null}</strong></span>{r.cells.map((cell:Row,j:number)=><span key={j} style={cell.s}>{cell.v}</span>)}</button></ShortcutTarget>):<p className="web-empty">Chưa có lượt nghe trong tuần.</p>}
           </div>
         </Panel>
       <Panel className="web-week-chart-panel" title={vm.weekTitle} subtitle="Lượt nghe mỗi ngày"><Legend items={[{color:'var(--c2)',label:'Trung bình'},{color:'var(--text3)',label:'Tuần trước'},{color:'var(--accent)',label:'Tuần này'}]}/><Chart>{vm.ch.week}</Chart></Panel>
@@ -94,8 +106,8 @@ export function DesktopOverviewScreen({vm}:P) {
           <Panel title="Theo thứ" subtitle={vm.rd.wd}><Chart>{vm.ch.wd}</Chart></Panel>
           <Panel title="Theo giờ" subtitle={vm.rd.hr}><Chart clock>{vm.ch.hr}</Chart></Panel>
         </> : <>
-          <Panel title="Lượt nghe theo tháng" subtitle={vm.rd.month}><Chart wide>{vm.ch.month}</Chart>{vm.hasBefore&&<p className="web-chart-note">{vm.beforeL}</p>}</Panel>
-          <Panel title="Giờ nghe theo tháng" subtitle={vm.rd.hours}><Chart wide>{vm.ch.hours}</Chart></Panel>
+          <Panel title="Lượt nghe theo tháng" subtitle={vm.rd.month}><Chart wide>{vm.ch.month}</Chart></Panel>
+          <Panel title="Giờ nghe theo tháng" subtitle={vm.rd.hours} className="web-hours-panel"><HoursBreakdown data={vm.rd.hoursBreakdown}/><Chart wide>{vm.ch.hours}</Chart></Panel>
           {vm.ch.calendar && <Panel title="Listening Calendar" subtitle={vm.rd.calendar}><Chart wide>{vm.ch.calendar}</Chart></Panel>}
         </>}
       </div>
