@@ -1,25 +1,28 @@
 import { cloneElement, createContext, useContext, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { ShortcutSheetNav, useMenuLinkTap, useSheetMotion, useSheetSwipeDismiss } from './shortcut-sheet-controls';
 import type { Ctx, VM } from '@/vm';
 import { BROWSER_PREVIEW, IOS_APP } from '@/config';
 import { albumId } from '@/lib/albums';
 import { isReleaseSaved, loadAppleDetail, setReleaseSaved, type AppleDetailQuery, type Release, type SavedReleaseSource } from '@/lib/discovery';
 import { appleMusicStoreId, shareAppleMusicLink } from '@/lib/apple-music-opening';
-import { openAppleMusicInNativeApp, playAlbumInNativeApp, playPlaylistInNativeApp, playSectionFromHereInNativeApp, playTrackInNativeApp, shareUrlInNativeApp, type NativePlaylistAction, type NativeQueueItem, type NativeTrackAction } from '@/lib/ios-bridge';
+import { openAppleMusicInNativeApp, openPlaylistInMusicNativeApp, playAlbumInNativeApp, playPlaylistInNativeApp, playSectionFromHereInNativeApp, playTrackInNativeApp, setPlaylistPebbleFavoriteInNativeApp, shareUrlInNativeApp, type NativePlaylistAction, type NativeQueueItem, type NativeTrackAction } from '@/lib/ios-bridge';
 import { longPress } from '@/lib/long-press';
 import { lockTextSelection } from '@/lib/selection-lock';
 import { MusicMetadata, compactPlays } from '@/components/music-metadata';
 import { SongMonthlyHistoryChart } from '@/components/song-monthly-history-chart';
+import { ShortcutHistoryFrame } from './shortcut-history-frame';
 import type { MetaItem } from '@/lib/metadata';
-import { getFresh, invalidate, postJson } from '@/lib/api';
-import { songHistoryChart } from '@/lib/charts';
-import { mlab } from '@/lib/fmt';
-import { buildPlaylistRankRows, loadPlaylistSnapshot, playlistsContainingTrack, readPlaylistRankExcludes, sortPlaylistsByRank, type Playlist } from '@/lib/playlists';
+import { artworkStore, getFresh, invalidate, postJson } from '@/lib/api';
+import { songHistoryChart, vbars } from '@/lib/charts';
+import { addDays, d1, dm, dow, fmtH, mlab, vn } from '@/lib/fmt';
+import { addPlaylistRankExclude, buildPlaylistRankRows, loadPlaylistSnapshot, playlistsContainingTrack, readPlaylistRankExcludes, sortPlaylistsByRank, type Playlist } from '@/lib/playlists';
 
 export type ShortcutEntity = {
   kind:'song'|'artist'|'album'; title:string; artist:string; id?:string; album?:string; albumArtist?:string;
   releaseId?:string; detail?:()=>void; goAlbum?:()=>void; image?:string; initials?:string; metadata?:MetaItem[];
   plays?:string; listening?:string; titleTone?:string; actionsOnly?:boolean; applePid?:string;
+  artistTone?:string; artistStatus?:string; artistRankLine?:string; artistGap?:string; artistLastDays?:number; artistLastOverdue?:boolean;
   rankWeight?:number;
   queueContext?: {kind:'playlist';playlistId:string;label?:string;itemCount?:number;index?:number}|{kind:'album';artist:string;album:string;label?:string;itemCount?:number;index?:number}|{kind:'section';items:NativeQueueItem[];index:number;label?:string};
   savedRelease?:Release; savedSource?:SavedReleaseSource;
@@ -39,8 +42,14 @@ export const artistShortcut = (r:any):ShortcutEntity => {
   const secondary=r.small;
   const secondaryIsPlays=/^[\d.,]+(?: lượt|x)$/.test(String(secondary || ''));
   const fallback=String(r.sub || '').split(' · ');
+  const metadata=(r.allTimeMetadata ?? r.metadata)?.map((item:MetaItem)=>{
+    const match=/^([\d.,]+) bài trong thư viện$/i.exec(String(item.text || '').trim());
+    return match?{...item,text:`${match[1]}♪`}:item;
+  });
   return {kind:'artist',title:r.name || r.an || r.title || '',artist:r.an || r.name || r.title || '',detail:r.onTap,
-    image:r.img,initials:r.ini || (r.name || r.an || r.title || '').slice(0,2).toUpperCase(),metadata:r.allTimeMetadata ?? r.metadata,titleTone:r.titleTone,
+    image:r.img,initials:r.ini || (r.name || r.an || r.title || '').slice(0,2).toUpperCase(),metadata,titleTone:r.titleTone,
+    artistStatus:r.cold?'Top 10 từ 04/2024 · ít nghe gần đây':r.hot?'* đang nghe nhiều':undefined,
+    artistRankLine:r.rline,artistGap:r.gap,
     plays:compactPlays(String(r.allTimeMetric ?? (secondaryIsPlays?secondary:primary) ?? fallback[0] ?? '')) || undefined,
     listening:r.allTimeListening ?? (compactPlays(String((secondaryIsPlays?primary:secondary) ?? fallback[1] ?? '')) || undefined)};
 };
@@ -63,7 +72,7 @@ export const albumShortcut = (r:any):ShortcutEntity => {
     sources:Array.isArray(r.sources)?r.sources:undefined,
   } as Release:undefined;
   return {kind:'album',title,artist,releaseId:r.releaseId,detail:r.onTap,
-    image:r.img || r.cover,initials:r.ini || r.title?.slice(0,2)?.toUpperCase(),metadata,titleTone:r.titleTone,savedRelease,
+    image:r.img || r.cover,initials:r.ini || r.title?.slice(0,2)?.toUpperCase(),metadata,titleTone:r.titleTone,artistTone:r.artistTone,savedRelease,
     savedSource:['recommend','playlistRecommend','recent','upcoming','other'].includes(String(r.releaseSavedSource || r.savedSource)) ? (r.releaseSavedSource || r.savedSource) : 'other',
     plays:compactPlays(String(r.allTimeMetric ?? providedPlays ?? (playsIsCount?r.plays:r.v) ?? '')) || undefined,
     listening:r.allTimeListening ?? (compactPlays(String(providedListening ?? (playsIsCount?r.v:r.plays) ?? '')) || undefined)};
@@ -116,8 +125,10 @@ export function ShortcutTarget({entity,children,singleTapActivates=false}:{entit
 }
 
 export function ShortcutProvider({c,vm,children}:{c:Ctx;vm?:VM|null;children:ReactNode}) {
-  const [entity,setEntity]=useState<ShortcutEntity|null>(null);
-  useEffect(()=>setEntity(null),[c.screen,c.id]);
+  const [entities,setEntities]=useState<ShortcutEntity[]>([]);
+  const [menuEntry,setMenuEntry]=useState<'slide'|'fade'>('slide');
+  const entity=entities[entities.length-1] || null;
+  useEffect(()=>setEntities([]),[c.screen,c.id]);
   const detail=(item:ShortcutEntity)=>{
     if(item.actionsOnly)return;
     if(item.detail)item.detail();
@@ -125,34 +136,56 @@ export function ShortcutProvider({c,vm,children}:{c:Ctx;vm?:VM|null;children:Rea
     else if(item.kind==='artist'&&item.artist)c.go('artist',item.artist);
     else if(item.kind==='song'&&item.id)c.go('song',item.id);
   };
-  return <ShortcutContext.Provider value={{open:setEntity,detail,focusKey:c.p.rankFocus?.key}}>
+  const close=()=>setEntities([]);
+  return <ShortcutContext.Provider value={{open:item=>{setMenuEntry('slide');setEntities([item]);},detail,focusKey:c.p.rankFocus?.key}}>
     {children}
-    {entity && <ShortcutSheet key={shortcutKey(entity)} entity={entity} c={c} vm={vm} close={()=>setEntity(null)}/>}
+    {entity && <ShortcutSheet key={shortcutKey(entity)} entity={entity} c={c} vm={vm} entry={menuEntry}
+      canBack={entities.length>1} open={item=>{setMenuEntry('fade');setEntities(stack=>[...stack,item]);}}
+      back={()=>{setMenuEntry('fade');setEntities(stack=>stack.slice(0,-1));}} close={close}/>}
   </ShortcutContext.Provider>;
 }
 
 type ShortcutRankBadge = {rank:number;change?:number};
 
-function ShortcutEntityHistoryChart({detail}:{detail:{kind:'artist'|'album';currentRank?:number;rows:any[]}}) {
-  const rows=detail.rows || [];
+function ShortcutEntityHistoryChart({detail,entity,loading,error}:{detail?:{kind:'artist'|'album';currentRank?:number;rows:any[]}|null;entity?:ShortcutEntity;loading?:boolean;error?:boolean}) {
+  const rows=detail?.rows || [];
   const [selected,setSelected]=useState(Math.max(0,rows.length-1));
-  useEffect(()=>setSelected(Math.max(0,rows.length-1)),[detail.kind,rows.length]);
-  if(!rows.length)return null;
+  useEffect(()=>setSelected(Math.max(0,rows.length-1)),[detail?.kind,rows.length]);
   const labels=rows.map(row=>{
     const period=String(row.period || '');
     return /^T\d{2}\/\d{2}$/.test(period)?period.slice(1):mlab(period.slice(0,7));
   });
   const values=rows.map(row=>Number(row.hours ?? row.monthHours) || 0);
   const ranks=rows.map(row=>Number(row.rank)>0?Number(row.rank):null);
-  return <div className="shortcut-song-history-chart">{songHistoryChart(values,ranks,labels,{
+  return <ShortcutHistoryFrame loading={loading} error={error} heading={<>
+      <strong>Giờ nghe &amp; lịch sử hạng</strong>
+      {entity?.kind==='artist'&&<div className="shortcut-artist-history-context">
+        {entity.artistGap&&<span title="Khoảng cách trung bình giữa các ngày nghe">TB <b className="num">{entity.artistGap}</b></span>}
+        {entity.artistLastDays!=null&&<b className={`shortcut-artist-history-days num ${entity.artistLastOverdue?'down':'warn'}`} title="Số ngày từ lần nghe cuối đến nay">{entity.artistLastDays} ngày</b>}
+      </div>}
+    </>}>
+    {rows.length>0?songHistoryChart(values,ranks,labels,{
     h:126,
-    currentRank:detail.currentRank,
+    currentRank:detail?.currentRank,
     rankThreshold:50,
     valueFormatter:(value:number)=>`${Math.round(value)}h`,
     sel:Math.min(selected,rows.length-1),
     onSel:setSelected,
-    ariaLabel:`Giờ nghe và lịch sử hạng theo tháng của ${detail.kind==='artist'?'nghệ sĩ':'album'}`,
-  })}</div>;
+    ariaLabel:`Giờ nghe và lịch sử hạng theo tháng của ${detail?.kind==='artist'?'nghệ sĩ':'album'}`,
+  }):null}</ShortcutHistoryFrame>;
+}
+
+function ArtistWeeklyChart({detail,loading,error}:{detail?:{weeks?:any[];asOf?:string}|null;loading?:boolean;error?:boolean}) {
+  const asOf=/^\d{4}-\d{2}-\d{2}$/.test(String(detail?.asOf || ''))?String(detail?.asOf):new Date().toISOString().slice(0,10);
+  const lastWeek=addDays(asOf,-((dow(asOf)+6)%7));
+  const dates=Array.from({length:26},(_,index)=>addDays(lastWeek,-7*(25-index)));
+  const byWeek=new Map((detail?.weeks || []).map(row=>[String(row.week || '').slice(0,10),Number(row.plays)||0]));
+  const values=dates.map(date=>byWeek.get(date) || 0);
+  const [selected,setSelected]=useState(values.length-1);
+  useEffect(()=>setSelected(values.length-1),[lastWeek]);
+  return <ShortcutHistoryFrame weekly loading={loading} error={error} heading={<><strong>Lượt theo tuần · 26 tuần gần nhất</strong>{detail&&<span className="num">Tuần {dm(dates[selected])} · {vn(values[selected])} lượt</span>}</>}>
+    {detail?vbars(values,dates.map((date,index)=>index%5===0||index===dates.length-1?dm(date):''),{h:120,inset:14,sel:selected,onSel:setSelected}):null}
+  </ShortcutHistoryFrame>;
 }
 
 function ShortcutEntityHeader({entity:e,onDetail,canDetail,rankBadge}:{entity:ShortcutEntity;onDetail:()=>void;canDetail:boolean;rankBadge?:ShortcutRankBadge}) {
@@ -176,19 +209,33 @@ function ShortcutEntityHeader({entity:e,onDetail,canDetail,rankBadge}:{entity:Sh
             <span className="shortcut-song-title-text">{e.title}</span>
             {duration&&<span className="shortcut-song-duration num">{duration}</span>}
           </div>
-          {e.kind==='album'&&<div className="shortcut-song-artist ell">{e.artist}</div>}
-          {(e.kind==='song'&&e.album||e.metadata?.length)&&<div className="shortcut-song-album-line">
+          {e.kind==='album'&&<div className={`shortcut-song-artist ell tone-${e.artistTone || 'gray'}`}>{e.artist}</div>}
+          {!!(e.kind==='song'&&e.album||e.metadata?.length)&&<div className="shortcut-song-album-line">
             {e.album&&<span className="shortcut-song-album ell">{e.album}</span>}
             <MusicMetadata items={e.metadata}/>
           </div>}
         </div>
         {(e.plays||e.listening)&&<div className="shortcut-song-metrics num">
-          {e.plays&&<strong>{e.plays}</strong>}
-          {e.listening&&<span>{e.listening}</span>}
+          {e.kind==='song' ? <>
+            {e.plays&&<strong>{e.plays}</strong>}
+            {e.listening&&<span>{e.listening}</span>}
+          </> : <>
+            {e.listening&&<strong>{e.listening}</strong>}
+            {e.plays&&<span>{e.plays}</span>}
+          </>}
           {e.kind==='song'&&Number(e.rankWeight)<1&&<small className="song-rank-weight-note">−{Math.round((1-Number(e.rankWeight))*100)}%</small>}
         </div>}
       </div>
     </div>
+  </div>;
+}
+
+function ArtistRankCards({line}:{line:string}) {
+  const match=/^1 tháng (.*?) · 100 ngày (.*?) · từ 04\/2024 (.*?) · All time (.*)$/.exec(line);
+  if(!match)return null;
+  const rows=[['1 tháng',match[1]],['100 ngày',match[2]],['Từ 04/2024',match[3]],['All time',match[4]]];
+  return <div className="shortcut-artist-ranks" aria-label="Thứ hạng nghệ sĩ theo kỳ">
+    {rows.map(([label,value])=><div key={label}><strong className="num">{value}</strong><span>{label}</span></div>)}
   </div>;
 }
 
@@ -210,7 +257,18 @@ function NativeControlIcon({kind}:{kind:NativeTrackAction}) {
   </svg>;
 }
 
-function ShortcutSheet({entity:e,c,vm,close}:{entity:ShortcutEntity;c:Ctx;vm?:VM|null;close:()=>void}) {
+function ShortcutSheet({entity:e,c,vm,canBack,entry,open:onOpen,back:onBack,close:onDismiss}:{entity:ShortcutEntity;c:Ctx;vm?:VM|null;canBack:boolean;entry:'slide'|'fade';open:(entity:ShortcutEntity)=>void;back:()=>void;close:()=>void}) {
+  const artwork=vm?.artwork || artworkStore.get('/artwork')?.data;
+  const {close:closeSheet,exit,ready,motionProps}=useSheetMotion(onDismiss,entry);
+  const menuLink=useMenuLinkTap();
+  const close=()=>{menuLink.cancel();closeSheet();};
+  const goDirect=(navigate:()=>void)=>exit(()=>{onDismiss();navigate();});
+  const goArtist=()=>c.go('artist',e.artist);
+  const goAlbum=e.goAlbum || (()=>c.go('album',albumId(e.albumArtist||e.artist,e.album!)));
+  const openArtist=()=>open(artistShortcut({name:e.artist,onTap:goArtist}));
+  const back=()=>exit(onBack,'fade');
+  const open=(entity:ShortcutEntity)=>exit(()=>onOpen(entity),'fade');
+  const swipeDismiss=useSheetSwipeDismiss(close);
   const panel=useRef<HTMLDivElement>(null), busy=useRef(false);
   const [link,setLink]=useState(''), [sharing,setSharing]=useState(false);
   const [linkError,setLinkError]=useState(''), [nativeBusy,setNativeBusy]=useState<NativeTrackAction|null>(null), [nativeStatus,setNativeStatus]=useState('');
@@ -223,19 +281,23 @@ function ShortcutSheet({entity:e,c,vm,close}:{entity:ShortcutEntity;c:Ctx;vm?:VM
   const [includedPlaylists,setIncludedPlaylists]=useState<Playlist[]|null>(null);
   const [includedPlaylistsError,setIncludedPlaylistsError]=useState(false);
   const [showIncludedPlaylists,setShowIncludedPlaylists]=useState(false);
+  const [playlistMenu,setPlaylistMenu]=useState<Playlist|null>(null);
   const [resolvedSongID,setResolvedSongID]=useState(()=>e.kind==='song'?e.id || '':'');
   const [songHistoryDetail,setSongHistoryDetail]=useState<any>(null);
-  const [entityHistoryDetail,setEntityHistoryDetail]=useState<{kind:'artist'|'album';currentRank?:number;rows:any[]}|null>(null);
+  const [historyState,setHistoryState]=useState<'loading'|'ready'|'error'>('loading');
+  const [entityHistoryDetail,setEntityHistoryDetail]=useState<{kind:'artist'|'album';currentRank?:number;rows:any[];weeks?:any[];asOf?:string}|null>(null);
+  const [artistSummary,setArtistSummary]=useState<Partial<ShortcutEntity>|null>(null);
   const query:AppleDetailQuery={kind:e.kind,artist:e.artist,title:e.title,album:e.album,releaseId:e.releaseId,trackId:e.id};
   useEffect(()=>{
     const previous=document.activeElement as HTMLElement|null;
     const overflow=document.body.style.overflow; document.body.style.overflow='hidden';
     const unlockSelection=lockTextSelection();
-    panel.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    panel.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({preventScroll:true});
     return ()=>{unlockSelection();document.body.style.overflow=overflow;if(previous?.isConnected)previous.focus({preventScroll:true});};
   },[]);
   useEffect(()=>{
-    if(e.kind!=='song'||resolvedSongID||!e.title||!e.artist)return;
+    if(!ready||e.kind!=='song'||resolvedSongID)return;
+    if(!e.title||!e.artist){setHistoryState('ready');return;}
     let live=true;
     const fold=(value:unknown)=>String(value || '').normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('vi').trim();
     getFresh(`/library/search?q=${encodeURIComponent(e.title)}&limit=15`)
@@ -243,74 +305,97 @@ function ShortcutSheet({entity:e,c,vm,close}:{entity:ShortcutEntity;c:Ctx;vm?:VM
         if(!live)return;
         const hit=(data?.songs || []).find((song:any)=>fold(song.title)===fold(e.title)&&fold(song.artist)===fold(e.artist));
         if(hit?.track_id)setResolvedSongID(hit.track_id);
+        else setHistoryState('ready');
       })
-      .catch(()=>{});
+      .catch(()=>{if(live)setHistoryState('error');});
     return ()=>{live=false;};
-  },[e.artist,e.kind,e.title,resolvedSongID]);
+  },[ready,e.artist,e.kind,e.title,resolvedSongID]);
   useEffect(()=>{
-    if(e.kind!=='song'||!resolvedSongID||rankWeight!==undefined)return;
+    if(!ready||e.kind!=='song'||!resolvedSongID||rankWeight!==undefined)return;
     let live=true;
     getFresh(`/settings/song-ranking?track_id=${encodeURIComponent(resolvedSongID)}`)
       .then(data=>{if(live){const weight=Number(data?.setting?.weight);setRankWeight([.7,.8,.9,1].includes(weight)?weight:weight===.75?.8:1);}})
       .catch(()=>{if(live)setRankWeight(1);});
     return ()=>{live=false;};
-  },[e.kind,rankWeight,resolvedSongID]);
+  },[ready,e.kind,rankWeight,resolvedSongID]);
   useEffect(()=>{
-    if(e.kind!=='song'||!resolvedSongID)return;
+    if(!ready||e.kind!=='song'||!resolvedSongID)return;
     let live=true;
-    getFresh(`/song/${encodeURIComponent(resolvedSongID)}?history=v2`).then(data=>{if(live)setSongHistoryDetail(data);}).catch(()=>{});
+    getFresh(`/song/${encodeURIComponent(resolvedSongID)}?history=v2`).then(data=>{if(live){setSongHistoryDetail(data);setHistoryState('ready');}}).catch(()=>{if(live)setHistoryState('error');});
     return ()=>{live=false;};
-  },[e.kind,resolvedSongID]);
+  },[ready,e.kind,resolvedSongID]);
   useEffect(()=>{
-    if(e.kind!=='song')return;
+    if(!ready||e.kind!=='song')return;
     let live=true;
     setIncludedPlaylists(null);setIncludedPlaylistsError(false);
     loadPlaylistSnapshot()
       .then(data=>{
         if(!live)return;
         const rankLibrary=vm?.nowPlayingLibrary?.length?vm.nowPlayingLibrary:vm?.playlistLibrary;
-        const ranks=buildPlaylistRankRows(data,rankLibrary,data.playlists.length,readPlaylistRankExcludes());
-        const matches=sortPlaylistsByRank(playlistsContainingTrack(data,{title:e.title,artist:e.artist,album:e.album,albumArtist:e.albumArtist,persistentId:e.applePid}),ranks,data.playlists);
-        setIncludedPlaylists(matches);
+        const matches=playlistsContainingTrack(data,{title:e.title,artist:e.artist,album:e.album,albumArtist:e.albumArtist,persistentId:e.applePid});
+        // The collapsed row only needs a count, not a complete library ranking pass.
+        const ranks=showIncludedPlaylists?buildPlaylistRankRows(data,rankLibrary,data.playlists.length,readPlaylistRankExcludes()):[];
+        setIncludedPlaylists(showIncludedPlaylists?sortPlaylistsByRank(matches,ranks,data.playlists):matches);
       })
       .catch(()=>{if(live){setIncludedPlaylists([]);setIncludedPlaylistsError(true);}});
     return ()=>{live=false;};
-  },[e.album,e.albumArtist,e.applePid,e.artist,e.kind,e.title,vm]);
+  },[ready,showIncludedPlaylists,e.album,e.albumArtist,e.applePid,e.artist,e.kind,e.title,vm?.nowPlayingLibrary,vm?.playlistLibrary]);
   useEffect(()=>{
-    if(e.kind==='song'||!e.artist)return;
+    if(!ready||e.kind==='song')return;
+    if(!e.artist){setHistoryState('ready');return;}
     let live=true;
     setEntityHistoryDetail(null);
+    setArtistSummary(null);
     void (async()=>{
       if(e.kind==='album'){
-        if(!e.title)return;
+        if(!e.title){setHistoryState('ready');return;}
         const data=await getFresh(`/history/albums?artist=${encodeURIComponent(e.artist)}&album=${encodeURIComponent(e.title)}&months=60`);
-        if(live)setEntityHistoryDetail({kind:'album',currentRank:Number(data?.currentRank)||undefined,rows:Array.isArray(data?.rows)?data.rows:[]});
+        if(live){setEntityHistoryDetail({kind:'album',currentRank:Number(data?.currentRank)||undefined,rows:Array.isArray(data?.rows)?data.rows:[]});setHistoryState('ready');}
         return;
       }
       const detail=await getFresh(`/artist/${encodeURIComponent(e.artist)}`);
       const currentRank=Number(detail?.ranks?.at)||undefined;
+      const ranks=detail?.ranks || {};
+      const rankText=(value:unknown)=>Number(value)>0?`#${Number(value)}`:'–';
+      const flag=String(detail?.flag || '');
+      const lastDay=String(detail?.logged?.last || '').slice(0,10);
+      const asOf=String(detail?.asOf || '').slice(0,10);
+      const lastMs=/^\d{4}-\d{2}-\d{2}$/.test(lastDay)?Date.parse(`${lastDay}T00:00:00Z`):NaN;
+      const asOfMs=/^\d{4}-\d{2}-\d{2}$/.test(asOf)?Date.parse(`${asOf}T00:00:00Z`):NaN;
+      const lastDays=Number.isFinite(lastMs)&&Number.isFinite(asOfMs)?Math.max(0,Math.floor((asOfMs-lastMs)/86400000)):undefined;
+      const avgGap=detail?.avgGapDays==null?undefined:Number(detail.avgGapDays);
+      if(live)setArtistSummary({
+        artistStatus:flag.includes('!!!')?'Top 10 từ 04/2024 · ít nghe gần đây':flag.includes('*')?'* đang nghe nhiều':undefined,
+        artistRankLine:`1 tháng ${rankText(ranks.m1)} · 100 ngày ${rankText(ranks.d100)} · từ 04/2024 ${rankText(ranks.ft0424)} · All time ${rankText(ranks.at)}`,
+        artistGap:avgGap!=null?`${d1(avgGap)} ngày`:'–',
+        artistLastDays:lastDays,
+        artistLastOverdue:lastDays!=null&&avgGap!=null?lastDays>avgGap:lastDays!=null&&lastDays>=14,
+        plays:detail?.allTime?.plays!=null?compactPlays(`${vn(detail.allTime.plays)} lượt`):undefined,
+        listening:detail?.allTime?.hours!=null?fmtH(detail.allTime.hours):undefined,
+      });
       const history=await getFresh(`/history/artists?top=${Math.max(300,currentRank || 0)}&months=36`);
       const fold=(value:unknown)=>String(value || '').normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('vi').trim();
       const hit=(history?.rows || []).find((row:any)=>fold(row.artist)===fold(e.artist));
       const rows=Array.isArray(hit?.history)&&hit.history.length
         ? hit.history
         : (detail?.months || []).map((row:any)=>({period:row.month,hours:row.hours,rank:null}));
-      if(live)setEntityHistoryDetail({kind:'artist',currentRank,rows});
-    })().catch(()=>{});
+      if(live){setEntityHistoryDetail({kind:'artist',currentRank,rows,weeks:Array.isArray(detail?.weeks)?detail.weeks:[],asOf:detail?.asOf});setHistoryState('ready');}
+    })().catch(()=>{if(live)setHistoryState('error');});
     return ()=>{live=false;};
-  },[e.artist,e.kind,e.title]);
-  const detail=()=>{
-    close();
+  },[ready,e.artist,e.kind,e.title]);
+  const detail=()=>exit(()=>{
+    onDismiss();
     if(e.detail)e.detail();
     else if(e.kind==='album')c.go('album',albumId(e.artist,e.title));
     else if(e.kind==='artist')c.go('artist',e.artist);
     else if(resolvedSongID)c.go('song',resolvedSongID);
-  };
-  const find=()=>{
-    if(e.kind==='album') { close(); c.go('periodTop','albums~all'); return; }
+  });
+  const find=()=>exit(()=>{
+    onDismiss();
+    if(e.kind==='album') { c.go('periodTop','albums~all'); return; }
     c.set(()=>({rankFocus:{key:shortcutKey(e),kind:e.kind as 'song'|'artist',label:e.title,request:Date.now()}}));
-    close(); c.go(e.kind==='song'?'top100':'artistsAll');
-  };
+    c.go(e.kind==='song'?'top100':'artistsAll');
+  });
   const findLabel=e.kind==='song'?'Find in Top 100 All time':e.kind==='artist'?'Find in Top 32 Artist All time':'Find in Top 24 Album All time';
   const toggleAlbumSaved=()=>{
     if(e.kind!=='album'||!e.artist||!e.title)return;
@@ -420,6 +505,8 @@ function ShortcutSheet({entity:e,c,vm,close}:{entity:ShortcutEntity;c:Ctx;vm?:VM
       ? Math.max(0,e.queueContext.itemCount-(e.queueContext.index || 0))
       : undefined;
   const nativeAlbumControls=IOS_APP&&e.kind==='album'&&!!e.artist&&!!e.title;
+  const image=e.image || (e.kind==='artist'?artwork?.artists?.[e.artist]:e.kind==='album'?artwork?.albums?.[`${e.artist}\u001f${e.title}`]:artwork?.tracks?.[e.id || '']);
+  const headerEntity={...e,...(e.kind==='artist'?artistSummary:null),image};
   const badgeDetail=e.kind==='song'?songHistoryDetail:entityHistoryDetail;
   const badgeRank=Number(e.kind==='song'?badgeDetail?.allTime?.rank:badgeDetail?.currentRank)||0;
   const badgeHistory=(e.kind==='song'?(badgeDetail?.rankHistory || []):(badgeDetail?.rows || []))
@@ -428,8 +515,11 @@ function ShortcutSheet({entity:e,c,vm,close}:{entity:ShortcutEntity;c:Ctx;vm?:VM
     ? (badgeHistory.length?Math.min(...badgeHistory):0)
     : (badgeHistory.length>1?badgeHistory[badgeHistory.length-2]:0);
   const rankBadge=badgeRank?{rank:badgeRank,change:badgePrevious?badgePrevious-badgeRank:undefined}:undefined;
-  return createPortal(<div className="shortcut-backdrop" onClick={event=>{if(event.target===event.currentTarget)close();}}>
-    <div ref={panel} role="dialog" aria-modal="true" aria-label={'Shortcut actions: '+e.title} className="shortcut-sheet" onKeyDown={event=>{
+  return createPortal(<div {...motionProps} data-covered={!!playlistMenu || undefined} className="shortcut-backdrop"
+    onPointerDownCapture={event=>{if(!(event.target as Element).closest('[data-menu-link]'))menuLink.cancel();}}
+    onClickCapture={event=>{motionProps.onClickCapture(event);if(!(event.target as Element).closest('[data-menu-link]'))menuLink.cancel();}}
+    onClick={event=>{if(event.target===event.currentTarget)close();}}>
+    <div {...swipeDismiss} ref={panel} role="dialog" aria-modal="true" aria-label={'Shortcut actions: '+e.title} className="shortcut-sheet" onKeyDown={event=>{
       if(event.key==='Escape'){event.preventDefault();close();}
       if(event.key==='Tab'){
         const buttons=Array.from(panel.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') || []);
@@ -438,21 +528,23 @@ function ShortcutSheet({entity:e,c,vm,close}:{entity:ShortcutEntity;c:Ctx;vm?:VM
         else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
       }
     }}>
-      <div className="shortcut-handle"/>
+      <ShortcutSheetNav canBack={canBack} back={back} close={close}/>
       {!e.actionsOnly&&<ShortcutEntityHeader
-        entity={e}
+        entity={headerEntity}
         onDetail={detail}
         canDetail={e.kind==='song'?!!(resolvedSongID||e.detail):!!(e.title||e.artist)}
         rankBadge={rankBadge}
       />}
-      {e.kind==='song'&&songHistoryDetail&&<SongMonthlyHistoryChart
-        detail={songHistoryDetail}
-        className="shortcut-song-history-chart"
-        height={126}
-      />}
-      {e.kind!=='song'&&entityHistoryDetail&&<ShortcutEntityHistoryChart
+      {!e.actionsOnly&&e.kind==='artist'&&<ArtistRankCards line={headerEntity.artistRankLine || '1 tháng – · 100 ngày – · từ 04/2024 – · All time –'}/>}
+      {!e.actionsOnly&&e.kind==='song'&&<ShortcutHistoryFrame loading={historyState==='loading'} error={historyState==='error'}>
+        {songHistoryDetail?.months?.length>0&&<SongMonthlyHistoryChart detail={songHistoryDetail} height={126}/>}
+      </ShortcutHistoryFrame>}
+      {!e.actionsOnly&&e.kind!=='song'&&<ShortcutEntityHistoryChart
         detail={entityHistoryDetail}
+        entity={headerEntity}
+        loading={historyState==='loading'} error={historyState==='error'}
       />}
+      {!e.actionsOnly&&e.kind==='artist'&&<ArtistWeeklyChart detail={entityHistoryDetail} loading={historyState==='loading'} error={historyState==='error'}/>}
       {nativeControls&&<div className="shortcut-native-group" role="group" aria-label="Điều khiển và hàng chờ Apple Music">
         <div className="shortcut-native-controls">
           <button type="button" disabled={nativeControlsDisabled} aria-label="Play next" title="Play next" onClick={()=>void nativeMusic('next')}><span aria-hidden="true">{nativeBusy==='next'?'…':<NativeControlIcon kind="next"/>}</span></button>
@@ -469,15 +561,16 @@ function ShortcutSheet({entity:e,c,vm,close}:{entity:ShortcutEntity;c:Ctx;vm?:VM
         <button type="button" disabled={!!nativeAlbumBusy} onClick={()=>void nativeAlbum('play')}>{nativeAlbumBusy==='play'?'Đang phát…':'Phát album'} <span aria-hidden="true">▶</span></button>
         <button type="button" disabled={!!nativeAlbumBusy} onClick={()=>void nativeAlbum('next')}>{nativeAlbumBusy==='next'?'Đang thêm…':'Phát tiếp theo'} <span aria-hidden="true">↳</span></button>
       </>}
+      {e.kind==='song'&&<button type="button" onClick={find}>{findLabel} <span>⌕</span></button>}
       {e.kind==='song'&&<>
-        <button type="button" disabled={!e.artist} onClick={()=>{close();c.go('artist',e.artist);}}>Go to Artist <span>›</span></button>
-        <button type="button" disabled={!e.album&&!e.goAlbum} onClick={()=>{close();if(e.goAlbum)e.goAlbum();else c.go('album',albumId(e.albumArtist||e.artist,e.album!));}}>Go to Album <span>›</span></button>
+        <button type="button" data-menu-link disabled={!e.artist} onBlur={menuLink.cancel} onClick={event=>menuLink.tap('artist',event.detail,openArtist,()=>goDirect(goArtist))}>Go to Artist <span>›</span></button>
+        <button type="button" data-menu-link disabled={!e.album} onBlur={menuLink.cancel} onClick={event=>menuLink.tap('album',event.detail,()=>open(albumShortcut({title:e.album,artist:e.albumArtist||e.artist,img:artwork?.albums?.[`${e.albumArtist||e.artist}\u001f${e.album}`] || e.image,onTap:goAlbum})),()=>goDirect(goAlbum))}>Go to Album <span>›</span></button>
         <button className="shortcut-playlist-included-toggle" type="button" aria-expanded={showIncludedPlaylists} aria-controls="shortcut-playlist-included" onClick={()=>setShowIncludedPlaylists(value=>!value)}>Playlist Included <span className="shortcut-action-tail">{includedPlaylists===null?'…':<>{includedPlaylists.length}<span aria-hidden="true">{showIncludedPlaylists?'⌃':'›'}</span></>}</span></button>
         {showIncludedPlaylists&&<div id="shortcut-playlist-included" className="shortcut-playlist-included" role="group" aria-label={`Playlist có bài ${e.title}`}>
           {includedPlaylists===null?<div className="shortcut-playlist-included-status" role="status">Đang tải playlist…</div>
             :includedPlaylistsError?<div className="shortcut-playlist-included-status" role="status">Chưa tải được danh sách playlist.</div>
             :includedPlaylists.length===0?<div className="shortcut-playlist-included-status">Không có trong playlist nào.</div>
-            :includedPlaylists.map((playlist,index)=><button key={playlist.id} type="button" onClick={()=>{close();c.go('playlist',playlist.id);}}>
+            :includedPlaylists.map((playlist,index)=><button key={playlist.id} type="button" data-menu-link onBlur={menuLink.cancel} onClick={event=>menuLink.tap(`playlist:${playlist.id}`,event.detail,()=>setPlaylistMenu(playlist),()=>goDirect(()=>c.go('playlist',playlist.id)))}>
               <span className="shortcut-playlist-included-index" aria-hidden="true">{index+1}</span>
               <span className="shortcut-playlist-included-copy"><strong>{playlist.name}</strong><small>{playlist.path} · {playlist.items.length} bài</small></span>
               <span className="shortcut-playlist-included-chevron" aria-hidden="true">›</span>
@@ -490,10 +583,53 @@ function ShortcutSheet({entity:e,c,vm,close}:{entity:ShortcutEntity;c:Ctx;vm?:VM
           </div>}
         </>}
       </>}
-      <button type="button" onClick={find}>{findLabel} <span>⌕</span></button>
+      {e.kind!=='song'&&<button type="button" onClick={find}>{findLabel} <span>⌕</span></button>}
+      {e.kind==='album'&&<button type="button" data-menu-link disabled={!e.artist} onBlur={menuLink.cancel} onClick={event=>menuLink.tap('artist',event.detail,openArtist,()=>goDirect(goArtist))}>Go to Artist <span>›</span></button>}
       <button type="button" disabled={sharing||!e.artist||(e.kind!=='artist'&&!e.title)} onClick={()=>void music()}>{sharing?'Đang lấy liên kết…':'Open in Music'} <span>↗</span></button>
-      {actions.map(action=><button key={action.label} type="button" onClick={()=>{close();void action.onRun();}}>{action.label} <span>{action.symbol || '›'}</span></button>)}
+      {actions.map(action=><button key={action.label} type="button" onClick={()=>exit(()=>{onDismiss();void action.onRun();})}>{action.label} <span>{action.symbol || '›'}</span></button>)}
       {linkError&&<div className="shortcut-status t3" role="status">{linkError}</div>}
+      <button type="button" className="shortcut-close" onClick={close}>Đóng</button>
+      {playlistMenu&&<PlaylistShortcutSheet playlist={playlistMenu} c={c} back={()=>setPlaylistMenu(null)} close={onDismiss}/>}
+    </div>
+  </div>,document.body);
+}
+
+function PlaylistShortcutSheet({playlist,c,back:onBack,close:onDismiss}:{playlist:Playlist;c:Ctx;back:()=>void;close:()=>void}) {
+  const {close,exit,motionProps}=useSheetMotion(onDismiss,'fade');
+  const back=()=>exit(onBack,'fade');
+  const swipeDismiss=useSheetSwipeDismiss(close);
+  const [busy,setBusy]=useState<'pebble'|'play'|'next'|'music'|''>('');
+  const [pebble,setPebble]=useState(!!(playlist.favorite || playlist.favourite));
+  const run=async(kind:'pebble'|'play'|'next'|'music')=>{
+    if(busy)return;
+    setBusy(kind);
+    try {
+      const nextPebble=!pebble;
+      const ok=kind==='pebble'
+        ? await setPlaylistPebbleFavoriteInNativeApp(playlist.id,nextPebble)
+        : kind==='music'
+          ? await openPlaylistInMusicNativeApp(playlist.id)
+          : await playPlaylistInNativeApp(playlist.id,kind);
+      if(!ok)throw new Error(kind==='pebble'?'Chỉ sửa Pebble được trên iPhone.':'Chỉ điều khiển Apple Music được trên iPhone.');
+      if(kind==='pebble')setPebble(nextPebble);
+      c.ptoast(kind==='pebble'?(nextPebble?'Đã thêm playlist vào Pebble.':'Đã loại playlist khỏi Pebble.')
+        :kind==='music'?'Đang mở playlist trong Apple Music.'
+          :kind==='play'?'Đang phát playlist.':'Đã thêm playlist vào phát tiếp theo.');
+      close();
+    } catch(error) {
+      c.ptoast(error instanceof Error?error.message:'Chưa thực hiện được.');
+    } finally { setBusy(''); }
+  };
+  return createPortal(<div {...motionProps} className="shortcut-backdrop shortcut-nested-backdrop" onClick={event=>{if(event.target===event.currentTarget)close();}}>
+    <div {...swipeDismiss} role="dialog" aria-modal="true" aria-label={'Playlist actions: '+playlist.name} className="shortcut-sheet" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();back();}}}>
+      <ShortcutSheetNav canBack back={back} close={close}/>
+      <button type="button" className="shortcut-heading shortcut-heading-link" onClick={()=>exit(()=>{onDismiss();c.go('playlist',playlist.id);})}><strong>{playlist.name}</strong><span className="t3">{playlist.path} · {vn(playlist.items.length)} bài</span></button>
+      <button type="button" disabled={!!busy} onClick={()=>void run('pebble')}>{busy==='pebble'?(pebble?'Đang loại…':'Đang thêm…'):(pebble?'Loại khỏi Pebble':'Thêm vào Pebble')} <span>{pebble?'−':'＋'}</span></button>
+      <button type="button" disabled={!!busy} onClick={()=>void run('play')}>{busy==='play'?'Đang phát…':'Phát playlist'} <span aria-hidden="true">▶</span></button>
+      <button type="button" disabled={!!busy} onClick={()=>void run('next')}>{busy==='next'?'Đang thêm…':'Phát tiếp theo'} <span aria-hidden="true">↳</span></button>
+      <button type="button" disabled={!!busy} onClick={()=>void run('music')}>{busy==='music'?'Đang mở…':'Open in Music'} <span>↗</span></button>
+      <button type="button" onClick={()=>exit(()=>{onDismiss();c.go('topPlaylists');})}>Go to Top playlist <span>▦</span></button>
+      <button type="button" onClick={()=>{addPlaylistRankExclude(playlist);c.ptoast('Đã exclude playlist khỏi ranking.');close();}}>Exclude khỏi ranking <span>⊘</span></button>
       <button type="button" className="shortcut-close" onClick={close}>Đóng</button>
     </div>
   </div>,document.body);

@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState } from 'react';
 import { albumId } from '@/lib/albums';
+import { useSheetMotion, useSheetSwipeDismiss } from './shortcut-sheet-controls';
 import { fetchJson } from '@/lib/api';
 import { fmtH, ini, vn, vnToday } from '@/lib/fmt';
 import { allTimeRankChanges, allTimeRiseWindow } from '@/lib/period-alltime-rise';
@@ -72,20 +73,22 @@ function summaryForMonth(period: string, c: Ctx) {
       { value: vn(totals.plays || 0), label: 'lượt' },
       { value: vn(totals.songs || 0), label: 'bài' },
       { value: vn(totals.artists || 0), label: 'nghệ sĩ' },
-      { value: vn(totals.albums || 0), label: 'album' },
+      { value: vn(totals.albums || 0), label: 'Albums' },
     ],
     lead: lead ? { ...lead, value: lead.metric, onTap: () => openArtists() } : null,
     openAll: () => openArtists(),
     blocks: [
       { label: 'Top artist', count: `${topArtists.length} nghệ sĩ`, rows: topArtists, round: true, onTap: () => openArtists() },
-      { label: 'Top album', count: `${topAlbums.length} album`, rows: topAlbums, onTap: () => c.go('periodTop', `albums~${period}~${asOf}`) },
+      { label: 'Top Albums', count: `${topAlbums.length} Albums`, rows: topAlbums, onTap: () => c.go('periodTop', `albums~${period}~${asOf}`) },
       { label: 'Top song', count: `${topSongs.length} bài`, rows: topSongs, onTap: openSongs },
       { label: 'Tăng hạng', count: risingArtists.length ? `${risingArtists.length} nghệ sĩ` : 'Chưa có', rows: risingArtists.slice(0, 3), round: true, onTap: () => openArtists('Đang lên') },
     ],
   } };
 }
 
-function MonthSummaryPopup({ period, c, onClose }: { period: string; c: Ctx; onClose: () => void }) {
+function MonthSummaryPopup({ period, c, onClose:onDismiss }: { period: string; c: Ctx; onClose: () => void }) {
+  const {close:onClose,motionProps}=useSheetMotion(onDismiss);
+  const swipeDismiss=useSheetSwipeDismiss(onClose);
   const panel = useRef<HTMLDivElement>(null);
   const { summary, error } = summaryForMonth(period, c);
   useEffect(() => {
@@ -98,8 +101,8 @@ function MonthSummaryPopup({ period, c, onClose }: { period: string; c: Ctx; onC
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
-  return createPortal(<div className="shortcut-backdrop month-summary-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={summary?.title || 'Tổng kết tháng'} className="shortcut-sheet month-summary-sheet" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } }}>
+  return createPortal(<div {...motionProps} className="shortcut-backdrop month-summary-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div {...swipeDismiss} ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={summary?.title || 'Tổng kết tháng'} className="shortcut-sheet month-summary-sheet" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } }}>
       <div className="shortcut-handle" />
       <div className="shortcut-heading shortcut-heading-with-close month-summary-popup-heading">
         <div><strong>{summary?.title || `Tóm tắt tháng ${Number(period.slice(5, 7))}`}</strong><span className="t3">Top 3 và thay đổi hạng trong tháng</span></div>
@@ -110,7 +113,9 @@ function MonthSummaryPopup({ period, c, onClose }: { period: string; c: Ctx; onC
   </div>, document.body);
 }
 
-function MonthPickerPopup({ current, options, onChoose, onClose }: { current: string; options: MonthOption[]; onChoose: (option: MonthOption) => void; onClose: () => void }) {
+function MonthPickerPopup({ current, options, onChoose, onClose:onDismiss }: { current: string; options: MonthOption[]; onChoose: (option: MonthOption) => void; onClose: () => void }) {
+  const {close:onClose,exit,motionProps}=useSheetMotion(onDismiss);
+  const swipeDismiss=useSheetSwipeDismiss(onClose);
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -122,8 +127,8 @@ function MonthPickerPopup({ current, options, onChoose, onClose }: { current: st
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
-  return createPortal(<div className="shortcut-backdrop month-summary-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Chọn tháng trên biểu đồ" className="shortcut-sheet month-picker-sheet" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } }}>
+  return createPortal(<div {...motionProps} className="shortcut-backdrop month-summary-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div {...swipeDismiss} ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Chọn tháng trên biểu đồ" className="shortcut-sheet month-picker-sheet" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } }}>
       <div className="shortcut-handle" />
       <div className="shortcut-heading shortcut-heading-with-close month-summary-popup-heading">
         <div><strong>Chọn tháng trên biểu đồ</strong><span className="t3">Chạm vào tháng sau khi chọn để mở tóm tắt</span></div>
@@ -133,7 +138,7 @@ function MonthPickerPopup({ current, options, onChoose, onClose }: { current: st
         {summaryMonthGroups(options).map(group => <section key={group.year} className="month-picker-year" aria-label={`Năm ${group.year}`}>
           <div className="lbl">{group.year}</div>
           <div className="month-picker-grid">
-            {group.months.map(option => <button key={option.period} type="button" className={option.period === current ? 'on' : ''} aria-pressed={option.period === current} onClick={() => onChoose(option)}>{option.label || monthLabel(option.period)}</button>)}
+            {group.months.map(option => <button key={option.period} type="button" className={option.period === current ? 'on' : ''} aria-pressed={option.period === current} onClick={() => exit(()=>onChoose(option))}>{option.label || monthLabel(option.period)}</button>)}
           </div>
         </section>)}
       </div>

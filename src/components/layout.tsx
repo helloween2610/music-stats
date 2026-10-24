@@ -1,8 +1,11 @@
 import {screenView, rememberView, saveViews} from '@/lib/view-preferences';
+import {sameViewModelInput} from '@/lib/view-model-input';
 import {MetadataHelpProvider} from './metadata-help';
 import { AlbumScreen } from '@/screens/album';
 import { ShortcutProvider } from './shortcuts';
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useSheetMotion, useSheetSwipeDismiss } from './shortcut-sheet-controls';
+import {useViewMotion,viewMotionKey} from './view-motion';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { dow, vnToday, ymd } from '@/lib/fmt';
 import { useAtom } from "jotai";
@@ -27,7 +30,7 @@ import { buildVM, Ctx } from "@/vm";
 import { ScopeTabs, EmptyState, LoadingView } from "./ui";
 import { FindSheet, ShareSheet } from "./sheets";
 import { ArtistsAllScreen, NativeWidgetPlaylistPublisher, RecentScreen, PeriodTopScreen, OverviewScreen, RisingScreen, Top100Screen, TodayScreen, TrendScreen, TopPlaylistsScreen } from "@/screens/main";
-import { ArtistScreen, LibraryScreen, RulesScreen, SongScreen, UnmatchedScreen } from "@/screens/detail";
+import { ArtistScreen, ArtistSongsScreen, LibraryScreen, RulesScreen, SongScreen, UnmatchedScreen } from "@/screens/detail";
 
 import { ReleasesScreen } from "@/screens/discovery";
 
@@ -43,7 +46,7 @@ import { WidgetPreviewScreen } from "@/screens/widget-preview";
 const SCREENS: Record<Screen, (x: any) => JSX.Element> = {
   album: AlbumScreen, recent: RecentScreen, playlists: PlaylistsScreen, playlist: PlaylistScreen, topPlaylists: TopPlaylistsScreen,
   periodTop: PeriodTopScreen, today: TodayScreen, top100: Top100Screen, artistsAll: ArtistsAllScreen, trend: TrendScreen,
-  overview: OverviewScreen, releases: ReleasesScreen, settings: LibraryScreen, library: LibraryScreen, unmatched: UnmatchedScreen, rules: RulesScreen, rising: RisingScreen, song: SongScreen, artist: ArtistScreen,
+  overview: OverviewScreen, releases: ReleasesScreen, settings: LibraryScreen, library: LibraryScreen, unmatched: UnmatchedScreen, rules: RulesScreen, rising: RisingScreen, song: SongScreen, artist: ArtistScreen, artistSongs: ArtistSongsScreen,
   notifications: NotificationsScreen, releaseYears: DesktopReleaseYearsScreen,
   player: NowPlayingScreen,
   widgetPreview: WidgetPreviewScreen,
@@ -55,7 +58,7 @@ const ROUTES: [string, Screen][] = [
   ["/", "today"], ["/trend", "trend"], ["/overview", "overview"], ["/releases", "releases"], ["/settings", "settings"], ["/library", "settings"],
   ["/notifications", "notifications"],
   ["/recent", "recent"], ["/playlists", "playlists"], ["/playlists/:id", "playlists"], ["/playlist/:id", "playlist"], ["/top-playlists", "topPlaylists"],
-  ["/period-top/:id", "periodTop"], ["/top100", "top100"], ["/artists", "artistsAll"], ["/unmatched", "unmatched"], ["/rules", "rules"], ["/rising", "rising"], ["/album/:id", "album"], ["/song/:id", "song"], ["/artist/:id", "artist"],
+  ["/period-top/:id", "periodTop"], ["/top100", "top100"], ["/artists", "artistsAll"], ["/unmatched", "unmatched"], ["/rules", "rules"], ["/rising", "rising"], ["/album/:id", "album"], ["/song/:id", "song"], ["/artist/:id", "artist"], ["/artist-songs/:id", "artistSongs"],
 ];
 
 if (IOS_APP || BROWSER_PREVIEW) ROUTES.push(["/player", "player"]);
@@ -75,7 +78,7 @@ const WEB_TOP_LIMITS={songs:100,albums:24,artists:32,playlists:25};
 const topLimit = (kind:keyof typeof WEB_TOP_LIMITS, preference:unknown) => kind==='songs' || DESKTOP_WEB ? WEB_TOP_LIMITS[kind] : listDisplayLimit(false,preference);
 const topShortcuts = (preference:unknown):QuickShortcut[] => [
   {label:`Top ${topLimit('songs',preference)} bài`,sub:'All time',screen:'top100',icon:'♪'},
-  {label:`Top ${topLimit('albums',preference)} album`,sub:'All time',screen:'periodTop',id:'albums~all',icon:'□'},
+  {label:`Top ${topLimit('albums',preference)} Albums`,sub:'All time',screen:'periodTop',id:'albums~all',icon:'□'},
   {label:`Top ${topLimit('artists',preference)} nghệ sĩ`,sub:'All time',screen:'artistsAll',icon:'◉'},
   {label:`Top ${topLimit('playlists',preference)} playlist`,sub:'Ranking playlist',screen:'topPlaylists',icon:'▦'},
 ];
@@ -124,7 +127,11 @@ function useCtx(screen: Screen, id: string | null): Ctx {
     goTab: (screen) => {
       const k = TABS.indexOf(screen);
       setP((q) => ({ ...q, tab: k }));
-      navigate(pathOf(TABS[k]), { replace: true, animate: false });
+      navigate(pathOf(TABS[k]), { replace: true, animate: screen === 'today', direction: 'backward' });
+    },
+    back: () => {
+      const parent=parentPage({screen,id},stored.tab,stored.pageParents);
+      navigate(pathOf(parent.screen,parent.id), { replace: true, direction: 'backward' });
     },
     later: (ms, fn) => { timers.current.push(setTimeout(fn, ms)); },
     ptoast: (msg) => {
@@ -134,28 +141,44 @@ function useCtx(screen: Screen, id: string | null): Ctx {
   };
 }
 
-function ScreenPage({ screen }: { screen: Screen }) {
+const ScreenPage=memo(function ScreenPage({ screen }: { screen: Screen }) {
   const params = useParams();
-  useApiRefresh();
+  const readView=useApiRefresh();
   const c = useCtx(screen, params.id ?? null);
+  const latestContext=useRef(c);latestContext.current=c;
+  const modelInput=useRef(c.p);
+  if(!sameViewModelInput(modelInput.current,c.p))modelInput.current=c.p;
+  // Cached view callbacks must still act on the current navigation/UI context.
+  const actions=useMemo<Pick<Ctx,'set'|'go'|'goTab'|'back'|'later'|'ptoast'>>(()=>({
+    set:fn=>latestContext.current.set(fn),
+    go:(screen,id,view)=>latestContext.current.go(screen,id,view),
+    goTab:screen=>latestContext.current.goTab(screen),
+    back:()=>latestContext.current.back(),
+    later:(ms,fn)=>latestContext.current.later(ms,fn),
+    ptoast:message=>latestContext.current.ptoast(message),
+  }),[]);
   const fixedScope=DESKTOP_WEB ? WEB_OVERVIEW_SCOPES[screen] : undefined;
   const trendScope = !DESKTOP_WEB && screen === "trend" && c.p.trendMode !== "rising" ? c.p.trendMode : "";
   const mobileOverviewScope = !DESKTOP_WEB && screen === "overview" ? "All time" : "";
   const standalone = screen === 'notifications' || screen === 'player' || screen === 'widgetPreview';
-  const vm = screen === 'widgetPreview'
-    ? buildVM({...c,screen:'today'})
-    : standalone ? null : buildVM(fixedScope ? {...c,screen:'overview',p:{...c.p,scope:fixedScope}} : trendScope ? {...c,screen:'overview',id:`trend~${c.p.trendAsOf}`,p:{...c.p,scope:trendScope}} : mobileOverviewScope ? {...c,p:{...c.p,scope:mobileOverviewScope}} : c);
+  const vm=useMemo(()=>readView(()=>{
+    const modelContext={...c,...actions,p:modelInput.current};
+    return screen==='widgetPreview'?buildVM({...modelContext,screen:'today'})
+      : screen==='artistSongs'?buildVM({...modelContext,screen:'artist'})
+      : standalone?null:buildVM(fixedScope?{...modelContext,screen:'overview',p:{...modelContext.p,scope:fixedScope}}
+        :trendScope?{...modelContext,screen:'overview',id:`trend~${modelContext.p.trendAsOf}`,p:{...modelContext.p,scope:trendScope}}
+        :mobileOverviewScope?{...modelContext,p:{...modelContext.p,scope:mobileOverviewScope}}:modelContext);
+  }),[screen,c.id,modelInput.current,readView.revision]);
   const View = DESKTOP_WEB ? ({today: DesktopTodayScreen, overview: DesktopOverviewScreen, trend: DesktopTrendScreen}[screen] || SCREENS[screen]) : SCREENS[screen];
   useEffect(() => {
     if (screen !== "settings") return;
     LIBREQ.screenOpen = true;
     return () => { LIBREQ.screenOpen = false; };
   }, [screen]);
-  const ambientBackdrop = (IOS_APP || BROWSER_PREVIEW) && screen !== 'player' && screen !== 'widgetPreview';
+  const content=useViewMotion(viewMotionKey(c.p,!!vm?.isLoading),!standalone);
   return (
     <MetadataHelpProvider screenKey={pathOf(screen,c.id)}><ShortcutProvider c={c} vm={vm}><Page className={`sc screen-${screen}`} hideScrollbar restoreScrollOnBack>
-      {ambientBackdrop && <NativeAppBackdrop/>}
-      <div className="screen-foreground">
+      <div ref={content} className="screen-foreground">
       {screen !== 'player' && screen !== 'widgetPreview' && <PullRefresh notify={c.ptoast} />}
       {standalone ? <View c={c} vm={vm || {}} /> : <>
       {vm!.isLoading ? <LoadingView /> : vm!.unavailable ? (
@@ -168,13 +191,13 @@ function ScreenPage({ screen }: { screen: Screen }) {
       </div>
     </Page></ShortcutProvider></MetadataHelpProvider>
   );
-}
+});
 
-function NativeWidgetPlaylistData({c}:{c:Ctx}) {
-  useApiRefresh();
-  const vm=buildVM({...c,screen:'today',id:null});
+const NativeWidgetPlaylistData=memo(function NativeWidgetPlaylistData({getContext}:{getContext:()=>Ctx}) {
+  const readView=useApiRefresh();
+  const vm=readView(()=>buildVM({...getContext(),screen:'today',id:null}));
   return <NativeWidgetPlaylistPublisher vm={vm}/>;
-}
+});
 
 
 function Shell() {
@@ -212,11 +235,13 @@ function Shell() {
   const id = decodeURIComponent(location.pathname.split("/").slice(2).join("/")) || null;
   const notificationContext = useCtx(screen,id);
   const widgetContext = useCtx('today',null);
+  const widgetContextRef=useRef(widgetContext);widgetContextRef.current=widgetContext;
+  const getWidgetContext=useCallback(()=>widgetContextRef.current,[]);
   const headerTitle=screen==='today' ? `${SHORT_WEEKDAYS[dow(today)]} ${currentDate.d}/${currentDate.m}`
     : screen==='top100' ? `Top ${topLimit('songs',p.periodListSize)} bài All time`
     : screen==='artistsAll' ? `Top ${topLimit('artists',p.periodListSize)} nghệ sĩ All time`
     : screen==='topPlaylists' ? `Top ${topLimit('playlists',p.periodListSize)} playlist All time`
-    : screen==='periodTop' && topPeriod(id).kind==='albums' && topPeriod(id).scope==='all' ? `Top ${topLimit('albums',p.periodListSize)} album All time`
+    : screen==='periodTop' && topPeriod(id).kind==='albums' && topPeriod(id).scope==='all' ? `Top ${topLimit('albums',p.periodListSize)} Albums All time`
     : screen==='periodTop' ? periodTopTitle(id,screenView(p,pathOf(screen,id)).periodFilter) : (DESKTOP_WEB ? desktopPeriodTitle(screen,today) : undefined) || TITLE[screen];
   useEffect(()=>{
     if(screen!=='top100'&&screen!=='artistsAll'&&screen!=='topPlaylists')setP(q=>q.rankFocus?{...q,rankFocus:undefined}:q);
@@ -224,12 +249,15 @@ function Shell() {
 
   // Chuyển màn: đóng sheet / toast; lựa chọn biểu đồ được giữ riêng theo màn.
   useEffect(() => {
-    setP((q) => ({ ...q, sheet: false, toast: "", findK: null, fq: "", fqd: "", ...(isTab ? { tab: tabIdx } : {}) }));
+    setP((q) => {
+      if(!q.sheet && !q.toast && q.findK===null && !q.fq && !q.fqd && (!isTab || q.tab===tabIdx))return q;
+      return { ...q, sheet: false, toast: "", findK: null, fq: "", fqd: "", ...(isTab ? { tab: tabIdx } : {}) };
+    });
   }, [location.key]);
 
   const back = () => {
     const parent = parentPage({ screen, id }, p.tab, p.pageParents);
-    navigate(pathOf(DESKTOP_WEB && parent.screen === "overview" ? "overviewThisMonth" : parent.screen, parent.id), { replace: true, animate: false });
+    navigate(pathOf(DESKTOP_WEB && parent.screen === "overview" ? "overviewThisMonth" : parent.screen, parent.id), { replace: true, direction: 'backward' });
   };
 
   const notify = (message: string) => {
@@ -248,7 +276,7 @@ function Shell() {
   });
   const openTab = (k: number) => {
     setP(q=>({...q,tab:k}));
-    if (screen !== TABS[k]) navigate(pathOf(TABS[k]), { replace: true, animate: false });
+    if (screen !== TABS[k]) navigate(pathOf(TABS[k]), { replace: true, animate: TABS[k] === 'today', direction: 'backward' });
   };
   const openPlayer = () => {
     setP(q=>({...q,pageParents:rememberParent({screen,id},{screen:'player',id:null},q.tab,q.pageParents)}));
@@ -269,7 +297,8 @@ function Shell() {
 
   return (
     <>
-      <div className="app-foreground">
+      <div className={`app-foreground${(IOS_APP || BROWSER_PREVIEW) && !immersive?' has-ambient-backdrop':''}`}>
+      {(IOS_APP || BROWSER_PREVIEW) && !immersive && <NativeAppBackdrop/>}
       <div className="app-content">
       {!immersive && (DESKTOP_WEB ? <><DesktopNavigation today={today} screen={screen} id={id} open={(s,targetId)=>{const k=TABS.indexOf(s);if(k>=0)openTab(k);else navigate(pathOf(s,targetId));}}/><DesktopHeader title={screen==='today'?`${SHORT_WEEKDAYS[dow(today)]}. ${currentDate.d}/${currentDate.m}/${String(currentDate.y).slice(-2)}`:headerTitle} back={!isTab&&screen!=='releaseYears'&&!WEB_OVERVIEW_SCOPES[screen]?back:undefined} /></> : <Header className={`app-header${screen==='periodTop'?' period-header':''}`} title={headerTitle} showBackIcon={!isTab} onBackClick={back} />)}
       {screen!=='notifications'&&!immersive&&<button type="button" className="notification-bell" aria-label={notifications.unread?`Thông báo, ${notifications.unread} chưa đọc`:'Thông báo'} aria-haspopup={DESKTOP_WEB?"dialog":undefined} aria-expanded={DESKTOP_WEB?notificationsOpen:undefined} onClick={()=>DESKTOP_WEB?setNotificationsOpen(true):navigate('/notifications')}>
@@ -283,8 +312,8 @@ function Shell() {
         ))}
       </AnimationRoutes>
       <WidgetPlaylistDeepLink c={notificationContext}/>
-      {IOS_APP&&<NativeWidgetPlaylistData c={widgetContext}/>}
-      {(IOS_APP || BROWSER_PREVIEW) && <NativeMiniPlayer hidden={immersive} open={openPlayer} notify={notify}/>}
+      {IOS_APP&&<NativeWidgetPlaylistData getContext={getWidgetContext}/>}
+      {(IOS_APP || BROWSER_PREVIEW) && <ShortcutProvider c={notificationContext}><NativeMiniPlayer hidden={immersive} open={openPlayer} notify={notify}/></ShortcutProvider>}
       {!DESKTOP_WEB && !immersive && <BottomNavigation
         className="app-nav"
         fixed
@@ -322,7 +351,9 @@ function NavIconWithLongPress({screen,index,openMenu}:{screen:Screen;index:numbe
   return <span className="nav-longpress-icon" {...longPressProps}>{icon}</span>;
 }
 
-function QuickShortcutMenu({title,subtitle,items,close,open}:{title:string;subtitle:string;items:QuickShortcut[];close:()=>void;open:(target:QuickShortcut)=>void}) {
+function QuickShortcutMenu({title,subtitle,items,close:onDismiss,open}:{title:string;subtitle:string;items:QuickShortcut[];close:()=>void;open:(target:QuickShortcut)=>void}) {
+  const {close,exit,motionProps}=useSheetMotion(onDismiss);
+  const swipeDismiss=useSheetSwipeDismiss(close);
   const panel=useRef<HTMLDivElement>(null);
   const ignoreClicksUntil=useRef(0);
   const actionIntent=useRef(false);
@@ -341,10 +372,10 @@ function QuickShortcutMenu({title,subtitle,items,close,open}:{title:string;subti
   const choose=(target:QuickShortcut)=>{
     const intended=actionIntent.current;actionIntent.current=false;
     if(!intended || Date.now()<ignoreClicksUntil.current)return;
-    open(target);
+    exit(()=>open(target));
   };
-  return createPortal(<div className="shortcut-backdrop" onClick={event=>{if(event.target===event.currentTarget)close();}}>
-    <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className="shortcut-sheet" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();close();}}}>
+  return createPortal(<div {...motionProps} className="shortcut-backdrop" onClick={event=>{if(event.target===event.currentTarget)close();}}>
+    <div {...swipeDismiss} ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className="shortcut-sheet" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();close();}}}>
       <div className="shortcut-handle"/>
       <div className="shortcut-heading shortcut-heading-with-close">
         <div><strong>{title}</strong><span className="t3">{subtitle}</span></div>

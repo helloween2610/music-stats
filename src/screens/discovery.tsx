@@ -136,7 +136,7 @@ function RecommendedAlbums({c}:{c:Ctx}) {
   const rows=data?.rows.filter(row=>!excluded.has(recommendationExcludeKey(row.artist,row.title))) || [];
   return <>
     <div className="release-tools">
-      <div className="release-status t3" role="status">Top 5 album trong 30 ngày · chỉ lấy album nghe trên 1 giờ · nguồn {data?.source || 'MusicBrainz'}</div>
+      <div className="release-status t3" role="status">Top 5 Albums trong 30 ngày · chỉ lấy album nghe trên 1 giờ · nguồn {data?.source || 'MusicBrainz'}</div>
       {data?.seeds?.length ? <div className="release-status t3">Seed: {data.seeds.map(seed=>`${seed.title} (${fmtH(seed.hours)})`).join(' · ')}</div> : null}
       <div className="release-actions">
         <button type="button" className="discovery-action compact-action" disabled={!data && !error} onClick={refresh}>Quét lại</button>

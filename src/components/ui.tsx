@@ -1,5 +1,6 @@
 import { CSSProperties, Fragment, ReactNode, useEffect, useRef } from "react";
 import { longPress } from "@/lib/long-press";
+import { shouldReduceMotion } from "@/lib/motion-preference";
 
 type Any = any;
 
@@ -56,7 +57,8 @@ export function SegTabs({ items, scrollActive = false }: { items: { label: strin
     if (!scrollActive || !ref.current) return;
     const active = ref.current.querySelector<HTMLElement>(".seg-item.on");
     if (!active) return;
-    ref.current.scrollLeft = Math.max(0, active.offsetLeft + active.offsetWidth - ref.current.clientWidth);
+    const left=Math.max(0,active.offsetLeft+active.offsetWidth-ref.current.clientWidth);
+    ref.current.scrollTo({left,behavior:shouldReduceMotion()?'auto':'smooth'});
   }, [activeLabel, scrollActive]);
   return (
     <div className="seg" ref={ref}>

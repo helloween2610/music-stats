@@ -115,6 +115,12 @@ final class LocalMusicServer {
 
         let method = parts.first.map(String.init) ?? "GET"
         let parsed = parsePath(String(parts[1]))
+        return await response(path: parsed.path, query: parsed.query, method: method)
+    }
+
+    // The in-app Capacitor bridge and Pebble HTTP server share the same command handling.
+    func response(path: String, query: [String: String], method: String = "GET") async -> HTTPResponse {
+        let parsed = (path: path, query: query)
         model.noteBridgeRequest(path: parsed.path, fromPebble: parsed.query["source"] == "pebble")
 
         if method == "OPTIONS" {
@@ -127,7 +133,8 @@ final class LocalMusicServer {
         case "/status":
             return .codable(["nowPlaying": model.nowPlaying()])
         case "/player-state":
-            return .codable(model.playerState())
+            let state = model.playerState(includeQueue: parsed.query["queue"] != "0")
+            return .codable(state, serverTiming: parsed.query["motion"] == "1" ? model.playerStateTiming : nil)
         case "/widget-playlists":
             guard let payload = parsed.query["payload"], model.updateWidgetPlaylists(payload: payload) else {
                 return .json(["error": "invalid widget playlists"], status: 400)
@@ -330,10 +337,12 @@ final class LocalMusicServer {
 
 struct HTTPResponse {
     let data: Data
+    let status: Int
+    let body: Data
 
-    static func codable<T: Encodable>(_ value: T, status: Int = 200) -> HTTPResponse {
+    static func codable<T: Encodable>(_ value: T, status: Int = 200, serverTiming: String? = nil) -> HTTPResponse {
         let body = (try? JSONEncoder().encode(value)) ?? Data("{}".utf8)
-        return make(status: status, contentType: "application/json", body: body)
+        return make(status: status, contentType: "application/json", body: body, serverTiming: serverTiming)
     }
 
     static func json(_ value: [String: Any], status: Int = 200) -> HTTPResponse {
@@ -349,9 +358,10 @@ struct HTTPResponse {
         make(status: status, contentType: contentType, body: body)
     }
 
-    private static func make(status: Int, contentType: String, body: Data) -> HTTPResponse {
+    private static func make(status: Int, contentType: String, body: Data, serverTiming: String? = nil) -> HTTPResponse {
         let reason = status == 200 ? "OK" : "Error"
-        let headers = [
+        let timingHeaders = serverTiming.map { ["Server-Timing: \($0)", "Access-Control-Expose-Headers: Server-Timing"] } ?? []
+        let headers = ([
             "HTTP/1.1 \(status) \(reason)",
             "Content-Type: \(contentType)",
             "Content-Length: \(body.count)",
@@ -361,12 +371,13 @@ struct HTTPResponse {
             "Access-Control-Allow-Methods: GET, POST, OPTIONS",
             "Access-Control-Allow-Headers: Content-Type, Authorization",
             "Access-Control-Allow-Private-Network: true",
-            "Access-Control-Max-Age: 86400",
+            "Access-Control-Max-Age: 86400"
+        ] + timingHeaders + [
             "",
             ""
-        ].joined(separator: "\r\n")
+        ]).joined(separator: "\r\n")
         var data = Data(headers.utf8)
         data.append(body)
-        return HTTPResponse(data: data)
+        return HTTPResponse(data: data, status: status, body: body)
     }
 }

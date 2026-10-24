@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 
 const calls=[];
+const nativeCalls=[];
+let nativeFailure=null;
+let nativeStatus=200;
+globalThis.statsMusicRequest=async options=>{
+  nativeCalls.push(options);
+  calls.push('http://native-test'+options.path+'?'+new URLSearchParams(options.params));
+  if(nativeFailure)throw nativeFailure;
+  const data=options.path==='/tracks'?[
+    {id:'1',persistentID:'00000000000000AA',title:'Stand Ablaze',subtitle:'In Flames',year:'1994',lastPlayed:'2026-10-22T04:10'},
+    {id:'2',persistentID:'00000000000000BB',title:'Never Played',subtitle:'In Flames',year:'1994'},
+  ]:nativeStatus===200?{ok:true}:{error:'Không đổi được thứ tự hàng chờ.'};
+  return {status:nativeStatus,body:JSON.stringify(data)};
+};
 let failures=0;
 globalThis.fetch=async url=>{
   calls.push(String(url));
@@ -20,6 +33,12 @@ const compiled=await build({
   format:'esm',
   platform:'node',
   alias:{'@':'./src'},
+  plugins:[{name:'native-music-fixture',setup(build){
+    build.onResolve({filter:/^@capacitor\/core$/},()=>({path:'core',namespace:'native-fixture'}));
+    build.onLoad({filter:/.*/,namespace:'native-fixture'},()=>({contents:`
+      export const registerPlugin=name=>name==='StatsMusic'?{request:options=>globalThis.statsMusicRequest(options)}:{};
+    `}));
+  }}],
   define:{
     'import.meta.env':'{}',
     'import.meta.env.VITE_IOS_APP':'"true"',
@@ -82,6 +101,7 @@ test('section queue keeps the selected row and the rows below it',async()=>{
 
 test('player and queue controls use the native player routes',async()=>{
   calls.length=0;
+  nativeCalls.length=0;
   await app.controlNativePlayer('playpause');
   await app.seekNativePlayer(83);
   await app.playNativeQueueItem(4);
@@ -97,10 +117,31 @@ test('player and queue controls use the native player routes',async()=>{
     ['/queue-move',{from:'4',to:'2'}],
     ['/queue-remove',{index:'3'}],
   ]);
+  assert.equal(nativeCalls.length,5);
+});
+
+test('native command failures are shown without replaying mutations over HTTP',async()=>{
+  calls.length=0;
+  nativeCalls.length=0;
+  nativeFailure=new Error('Native unavailable');
+  try {await assert.rejects(app.controlNativePlayer('playpause'),/Native unavailable/);}
+  finally {nativeFailure=null;}
+  assert.equal(nativeCalls.length,1);
+  assert.equal(calls.length,1);
+  nativeStatus=400;
+  try {await assert.rejects(app.moveNativeQueueItem(2,1),/Không đổi được thứ tự/);}
+  finally {nativeStatus=200;}
 });
 
 test('native artwork URL addresses the local bridge',()=>{
   assert.equal(app.nativePlayerArtworkUrl('5D66052979B6450A'),'http://127.0.0.1:8765/artwork?pid=5D66052979B6450A');
+});
+
+test('elapsed-time polling opts out of queue enumeration; explicit refresh includes it',async()=>{
+  calls.length=0;
+  await app.loadNativePlayerState(false);
+  await app.loadNativePlayerState();
+  assert.deepEqual(calls.map(value=>new URL(value).searchParams.get('queue')),['0','1']);
 });
 
 test('playlist last-played metadata comes from the live native library',async()=>{

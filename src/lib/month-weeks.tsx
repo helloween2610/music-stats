@@ -37,8 +37,9 @@ export function MonthWeeksChart({ weeks }: { weeks: MonthWeek[] }) {
   const toggleDay = (day: number) => select(current => current === day ? null : day);
   const width = 342, height = 180, left = 8, right = 308, top = 12, bottom = 156;
   const peak = Math.max(1, ...totals);
-  const unit = Math.pow(10, Math.floor(Math.log10(peak)));
-  const max = Math.ceil(peak / unit) * unit;
+  // Keep the vertical scale tied to the busiest weekday instead of rounding it
+  // up to a coarse power-of-ten ceiling that can flatten the whole month.
+  const max = peak;
   const x = (i: number) => left + i * (right - left) / 6;
   const y = (value: number) => bottom - value / max * (bottom - top);
   return <>

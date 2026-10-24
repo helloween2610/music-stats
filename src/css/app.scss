@@ -179,10 +179,14 @@ html, body, #app { overscroll-behavior-y: none; }
 body.ios-app #app,
 body.browser-preview #app { position:relative; min-height:100vh; }
 .native-app-backdrop { position:fixed; inset:-64px; z-index:1; overflow:hidden; pointer-events:none; background:#151518; }
-.native-app-backdrop img { width:100%; height:100%; object-fit:cover; filter:blur(56px) saturate(1.12); transform:scale(1.2); opacity:.82; }
+.native-app-backdrop img { width:100%; height:100%; object-fit:cover; filter:blur(56px) saturate(1.12); transform:translateZ(0) scale(1.2); opacity:.82; }
 .native-app-backdrop::after { content:""; position:absolute; inset:0; background:linear-gradient(180deg,rgba(8,8,10,.28),rgba(12,12,15,.6) 46%,rgba(10,10,13,.9)); }
 .app-foreground { position:relative; min-height:100vh; isolation:isolate; }
 .app-content { position:relative; z-index:2; min-height:100vh; }
+.has-ambient-backdrop .app-content,
+.has-ambient-backdrop .zaui-routes,
+.has-ambient-backdrop .zaui-routes-item,
+.has-ambient-backdrop .sc.zaui-page { background:transparent!important; }
 .sc:not(.screen-player):not(.screen-widgetPreview) { position:relative; isolation:isolate; }
 .sc > .native-app-backdrop { z-index:0; }
 .screen-foreground { position:relative; z-index:1; min-height:calc(100vh - var(--header-h)); }
@@ -352,6 +356,9 @@ body.browser-preview .sc:not(.screen-player) { background:transparent!important;
 .btn-wide.btn-subtle {
   height: 34px;
   margin: 8px 16px 0;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  padding: 0 12px;
   border-color: var(--line);
   border-radius: 10px;
   color: var(--text3);
@@ -418,8 +425,17 @@ body.browser-preview .sc:not(.screen-player) { background:transparent!important;
 .today-plays-unit { margin-left:2px; color:var(--text2); font-size:18px; font-weight:500; letter-spacing:0; }
 .today-summary-sub, .today-week-sub { align-self:end; margin:0; font-size:var(--type-caption,12px); line-height:16px; }
 .today-week-change { font-size: var(--type-caption, 12px); font-weight:600; margin-top:6px; line-height:1.5; }
-.today-change-stack { margin-top:4px; }
-.today-change-stack .today-week-change { margin-top:2px; }
+.today-change-stack { min-width:0; margin-top:4px; display:grid; gap:2px; }
+.today-change-stack .today-week-change {
+  min-width:0;
+  max-width:100%;
+  margin-top:0;
+  font-size:10px;
+  line-height:1.4;
+  letter-spacing:0;
+  white-space:nowrap;
+}
+.detail-info-bar { background:rgba(20,21,25,.05); }
 .today-week-clock { width:100%; max-width:145px; margin:6px auto; }
 .screen-today > .card.pad .weekly-grouped-chart { max-width:420px; margin-left:auto; margin-right:auto; }
 
@@ -497,7 +513,7 @@ body.browser-preview .sc:not(.screen-player) { background:transparent!important;
 .month-picker-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
 .month-picker-grid button {
   min-width:0; min-height:40px; padding:0 4px; border:1px solid var(--line); border-radius:8px;
-  background:var(--surface2); color:var(--text2); font:inherit; font-size:13px; font-weight:600;
+  background:rgba(20,21,25,.2); color:var(--text2); font:inherit; font-size:13px; font-weight:600;
 }
 .month-picker-grid button.on { border-color:var(--accent); background:var(--accent); color:var(--ink); font-weight:800; }
 .month-picker-grid button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
@@ -693,6 +709,13 @@ body.browser-preview .sc:not(.screen-player) { background:transparent!important;
 .artist-summary-metrics .metric-value { font-size: 22px; font-weight: 700; line-height: 24px; }
 .artist-summary-metrics .metric-duration { font-size: 15px; }
 .artist-summary-metrics .metric-label { font-size: var(--type-caption, 11px); margin-top: 4px; }
+.artist-detail-header { display:flex; align-items:center; gap:14px; padding:16px 16px 4px; }
+.artist-detail-header-summary { min-width:0; flex:1; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px; }
+.artist-detail-header-copy { min-width:0; }
+.artist-detail-header-copy > .shortcut-target { font-size:24px; line-height:29px; font-weight:700; letter-spacing:0; }
+.artist-detail-header-copy .music-metadata { margin:5px 0 0; flex-wrap:wrap; }
+.artist-detail-header-metrics { display:flex; flex-direction:column; align-items:flex-end; gap:1px; color:var(--text2); font-size:11px; line-height:15px; white-space:nowrap; }
+.artist-detail-header-metrics strong { color:var(--accent); font-size:14px; line-height:18px; }
 .song-artist-line { display:flex; align-items:baseline; gap:4px; min-width:0; }
 .song-artist-line > .ell { min-width:0; }
 .song-list-number { flex:none; color:var(--text3); font-size:var(--type-caption, 11px); font-weight:600; }
@@ -868,20 +891,93 @@ button.album-tile { padding:0; border:0; background:none; color:var(--text); fon
 }
 .shortcut-target.shortcut-highlight { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 12px; }
 .shortcut-target:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+// Match the router's retained-page lifetime; tab switches need opacity, not transform.
+.zaui-routes .zaui-routes-item:not(:only-child) {
+  &.zaui-routes-forward-enter-active, &.zaui-routes-forward-exit-active,
+  &.zaui-routes-backward-enter-active, &.zaui-routes-backward-exit-active {
+    transition: transform 320ms cubic-bezier(.22,.7,.2,1), opacity 240ms ease;
+    will-change: transform, opacity;
+  }
+  &.zaui-routes-no-animation-enter-active, &.zaui-routes-no-animation-exit-active {
+    transition: opacity 180ms ease;
+  }
+}
+.zaui-routes {
+  .zaui-routes-forward-enter { transform:translate3d(100%,0,0); opacity:0; }
+  .zaui-routes-backward-enter { transform:translate3d(-20%,0,0); opacity:0; }
+  .zaui-routes-forward-enter-active, .zaui-routes-backward-enter-active { transform:translate3d(0,0,0); opacity:1; }
+  .zaui-routes-forward-exit, .zaui-routes-backward-exit { transform:translate3d(0,0,0); opacity:1; }
+  .zaui-routes-forward-exit-active { transform:translate3d(-20%,0,0); opacity:0; pointer-events:none; }
+  .zaui-routes-backward-exit-active { transform:translate3d(100%,0,0); opacity:0; pointer-events:none; }
+  .zaui-routes-no-animation-exit-active { pointer-events:none; }
+  .zaui-routes-forward-enter:has(.native-player-page) { transform:translate3d(0,100%,0); }
+  .zaui-routes-forward-enter-active:has(.native-player-page) { transform:translate3d(0,0,0); }
+  .zaui-routes-backward-exit-active:has(.native-player-page) { transform:translate3d(0,100%,0); }
+}
+@keyframes sheet-backdrop-in { from { opacity:0; } to { opacity:1; } }
+@keyframes sheet-in { from { transform:translate3d(0,100%,0); } to { transform:translate3d(0,0,0); } }
+@keyframes sheet-out { from { transform:translate3d(0,var(--sheet-drag-y,0px),0); } to { transform:translate3d(0,100%,0); } }
+@keyframes sheet-dim-out { from { opacity:var(--sheet-dim,1); } to { opacity:0; } }
+@keyframes compact-in { from { opacity:0; transform:translate3d(0,8px,0); } to { opacity:1; transform:translate3d(0,0,0); } }
+.notification-popup[open] { animation:compact-in 180ms ease both; }
+.notification-popup[open]::backdrop { animation:sheet-backdrop-in 180ms ease both; }
+.notification-popup[data-closing] { animation:compact-in 180ms ease reverse both; }
+.notification-popup[data-closing]::backdrop { animation:sheet-backdrop-in 180ms ease reverse both; }
+.chip, .seg-item, .release-tabs button, .app-nav .zaui-bottom-navigation-item {
+  transition:background-color 140ms ease,color 140ms ease,box-shadow 140ms ease;
+}
+.native-mini-player, .toast > div { animation:compact-in 180ms ease both; }
 .shortcut-backdrop {
   position: fixed; inset: 0; z-index: 10000;
-  background: rgba(0,0,0,.62); display: flex; align-items: flex-end; justify-content: center;
+  display: flex; align-items: flex-end; justify-content: center;
   padding: 12px 12px 0; touch-action: none;
   -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+  &::before { content:""; position:absolute; inset:0; background:rgba(0,0,0,.62); pointer-events:none; opacity:var(--sheet-dim,1); animation:sheet-backdrop-in 300ms ease backwards; }
+  &[data-entered] > .shortcut-sheet { animation:none; }
+  &[data-closing]::before { animation:sheet-dim-out 180ms ease both; }
+  &[data-closing] > .shortcut-sheet { animation:sheet-out 180ms cubic-bezier(.4,0,1,1) both!important; }
 }
 .shortcut-sheet {
+  position:relative; will-change:transform; backface-visibility:hidden;
   width: 100%; max-width: 440px; max-height: 90dvh; overflow-y: auto;
   background: var(--surface); color: var(--text); border: 1px solid var(--line);
   border-radius: 24px 24px 0 0; padding: 8px 16px max(16px,env(safe-area-inset-bottom));
   box-shadow: 0 -12px 60px rgba(0,0,0,.3); overscroll-behavior: contain; touch-action: pan-y;
   -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+  animation:sheet-in 460ms cubic-bezier(.2,.8,.2,1) both;
 }
-.shortcut-handle { width: 36px; height: 4px; margin: 0 auto 16px; border-radius: 4px; background: var(--text3); }
+.shortcut-sheet[data-resting] { animation:none; }
+@keyframes sheet-crossfade-in { from { opacity:0; } }
+@keyframes sheet-crossfade-out { to { opacity:0; } }
+.shortcut-backdrop[data-entry="fade"]::before,
+.shortcut-backdrop[data-closing][data-exit="fade"]::before { animation:none; }
+// Fade content only: the opaque sheet and dimmed backdrop must never reveal the page during a menu switch.
+.shortcut-backdrop[data-entry="fade"]:not([data-closing]) > .shortcut-sheet,
+.shortcut-backdrop[data-closing][data-exit="fade"] > .shortcut-sheet { animation:none!important; }
+.shortcut-backdrop[data-entry="fade"]:not([data-closing]):not([data-entered]) > .shortcut-sheet > :not(.shortcut-sheet-nav) { animation:sheet-crossfade-in 120ms ease-out both; }
+.shortcut-backdrop[data-closing][data-exit="fade"] > .shortcut-sheet > :not(.shortcut-sheet-nav) { animation:sheet-crossfade-out 80ms ease-in both!important; }
+.shortcut-backdrop[data-covered] { visibility:hidden; }
+.shortcut-sheet[data-dragging] { animation:none; transform:translate3d(0,var(--sheet-drag-y,0px),0); }
+.shortcut-sheet button { transition:background-color 120ms ease, color 120ms ease; }
+@media (prefers-reduced-motion:reduce) {
+  body:not(.ios-app) {
+  .notification-popup[open], .notification-popup[open]::backdrop, .native-mini-player, .toast > div { animation:none; }
+  .chip, .seg-item, .release-tabs button, .app-nav .zaui-bottom-navigation-item, .shortcut-sheet button { transition:none; }
+  .shortcut-backdrop::before, .shortcut-backdrop > .shortcut-sheet,
+  .shortcut-backdrop > .shortcut-sheet > *,
+  .shortcut-backdrop[data-closing]::before, .shortcut-backdrop[data-closing] > .shortcut-sheet { animation:none!important; }
+  .zaui-routes .zaui-routes-item:not(:only-child) { transition:none!important; transform:none!important; }
+  .native-player-page.dismiss-settling, .native-queue-row, .native-queue-play { transition:none!important; }
+  }
+}
+.shortcut-sheet-nav { height:32px; display:grid; grid-template-columns:36px 1fr 36px; align-items:start; margin-bottom:16px; }
+.shortcut-sheet-nav > span { width:36px; }
+.shortcut-sheet-nav > button { width:32px; height:32px; padding:0; border:0; border-radius:50%; background:var(--surface2); color:var(--text2); font:inherit; font-size:25px; line-height:1; display:flex; align-items:center; justify-content:center; }
+.shortcut-sheet-nav > button:last-child { justify-self:end; }
+.shortcut-sheet-nav > button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.shortcut-sheet-nav > button:active { background:var(--card); color:var(--text); }
+.shortcut-handle { width: 36px; height: 4px; margin: 5px auto 0; border-radius: 4px; background: var(--text3); }
+.shortcut-nested-backdrop { z-index:10001; }
 .shortcut-heading { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 16px; overflow-wrap: anywhere; }
 .shortcut-sheet > button.shortcut-heading-link { min-height:0; width:100%; align-items:flex-start; justify-content:flex-start; padding:0 8px 16px; border-top:0; color:inherit; text-align:left; }
 .shortcut-sheet > button.shortcut-heading-link span { color:var(--text3); font-size:var(--type-caption,12px); }
@@ -910,25 +1006,46 @@ button.album-tile { padding:0; border:0; background:none; color:var(--text); fon
 .shortcut-song-card-action:active { filter:brightness(.92); }
 .shortcut-song-cover { position:relative; width:74px; min-height:74px; aspect-ratio:1; display:flex; align-items:center; justify-content:center; overflow:hidden; background:var(--bg); color:var(--text3); font-size:20px; font-weight:700; }
 .shortcut-song-cover img { width:100%; height:100%; display:block; object-fit:cover; }
-.shortcut-artist-card .shortcut-song-cover { overflow:visible; background:transparent; }
-.shortcut-artist-card .shortcut-song-cover img, .shortcut-artist-card .shortcut-song-cover > span:not(.native-art-rank) { width:82%; height:82%; display:flex; align-items:center; justify-content:center; border-radius:50%; object-fit:cover; background:var(--surface); box-shadow:none; }
+.shortcut-artist-card .shortcut-song-cover { height:74px; min-height:74px; align-self:start; overflow:visible; background:transparent; }
+.shortcut-artist-card .shortcut-song-cover img, .shortcut-artist-card .shortcut-song-cover > span:not(.native-art-rank) { width:82%; height:auto; aspect-ratio:1; display:flex; align-items:center; justify-content:center; border-radius:50%; object-fit:cover; background:var(--surface); box-shadow:none; }
 .shortcut-song-details { min-width:0; display:flex; flex-direction:column; justify-content:center; gap:3px; padding:2px 0 2px 12px; }
 .shortcut-song-summary { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px; }
 .shortcut-song-copy { min-width:0; display:flex; flex-direction:column; gap:3px; }
 .shortcut-song-label { color:var(--accent); font-size: var(--type-caption, 9px); line-height:12px; font-weight:600; text-transform:uppercase; letter-spacing:.35px; }
 .shortcut-song-label-artist { color:var(--text2); font-size:12px; line-height:15px; font-weight:400; text-transform:none; letter-spacing:0; }
 .shortcut-song-title { min-width:0; display:flex; align-items:baseline; font-size:15px; line-height:19px; font-weight:700; white-space:nowrap; }
+.shortcut-album-card .shortcut-song-title { font-size:18px; line-height:22px; }
 .shortcut-song-title-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .shortcut-song-duration { flex:none; margin-left:7px; color:var(--text2); font-size: var(--type-caption, 11px); line-height:inherit; font-weight:400; white-space:nowrap; }
 .shortcut-song-artist { color:var(--text); font-size:13px; line-height:17px; }
+.shortcut-artist-card { margin-bottom:8px; }
+.shortcut-artist-ranks { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin:8px 0 12px; }
+.shortcut-artist-ranks > div { min-width:0; min-height:50px; padding:7px 4px 6px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border-radius:7px; background:var(--surface2); text-align:center; }
+.shortcut-artist-ranks strong { color:var(--text); font-size:14px; line-height:17px; }
+.shortcut-artist-ranks span { color:var(--text2); font-size:9px; line-height:12px; white-space:nowrap; }
 .shortcut-song-album-line { min-width:0; display:flex; align-items:baseline; gap:8px; }
 .shortcut-song-album { min-width:0; flex:0 1 auto; color:var(--text2); font-size: var(--type-caption, 11px); line-height:15px; }
 .shortcut-song-album-line .music-metadata { min-width:0; flex:1 1 auto; flex-wrap:nowrap; overflow:hidden; margin:0; font-size: var(--type-caption, 10px); gap:3px 8px; }
 .shortcut-song-album-line .music-metadata > * { flex:none; }
 .shortcut-song-metrics { display:flex; flex-direction:column; align-items:flex-end; gap:1px; white-space:nowrap; color:var(--text2); font-size: var(--type-caption, 11px); line-height:15px; }
 .shortcut-song-metrics strong { color:var(--accent); font-size:13px; }
-.shortcut-song-history-chart { margin:-2px 0 12px; padding:4px 0 0; overflow:visible; border-bottom:1px solid var(--line); }
+.shortcut-song-history-chart { margin:-2px 0 12px; padding:4px 0 0; overflow:visible; }
 .shortcut-song-history-chart svg { width:100%; min-height:126px; display:block; }
+.shortcut-history-body { aspect-ratio:342 / 126; min-height:126px; position:relative; }
+.shortcut-history-body.weekly { aspect-ratio:342 / 120; }
+.shortcut-history-body > * { position:absolute; inset:0; width:100%; height:100%; }
+.shortcut-history-body svg { height:100%; min-height:0; }
+.shortcut-history-placeholder { display:grid; place-items:center; color:var(--text3); font-size:12px; border-block:1px solid var(--line); }
+.shortcut-artist-weekly-heading { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin:0 8px 4px; }
+.shortcut-song-history-chart:has(.shortcut-history-body) > .shortcut-artist-weekly-heading { min-height:32px; }
+.shortcut-artist-weekly-heading strong { min-width:0; color:var(--text); font-size:12px; line-height:16px; }
+.shortcut-artist-weekly-heading span { flex:none; color:var(--text2); font-size:10px; line-height:14px; white-space:nowrap; }
+.shortcut-artist-history-context { flex:none; display:flex; align-items:baseline; gap:10px; white-space:nowrap; }
+.shortcut-artist-history-context span { color:var(--text2); font-size:10px; line-height:14px; }
+.shortcut-artist-history-context span b { color:var(--text); font-size:12px; }
+.shortcut-artist-history-context .shortcut-artist-history-days { font-size:15px; line-height:18px; }
+.shortcut-artist-history-context .warn { color:var(--accent); }
+.shortcut-artist-history-context .down { color:var(--down); }
 .shortcut-native-group { border-bottom:1px solid var(--line); }
 .shortcut-native-controls { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:0 0 10px; }
 .shortcut-native-controls button { min-height:34px; border:1px solid var(--line); border-radius:10px; background:var(--surface2); color:var(--text); font:inherit; font-size:15px; font-weight:700; display:flex; align-items:center; justify-content:center; }
@@ -939,10 +1056,10 @@ button.album-tile { padding:0; border:0; background:none; color:var(--text); fon
 .shortcut-native-controls button:disabled { opacity:.45; }
 .shortcut-native-controls button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .shortcut-native-controls button:active:not(:disabled) { filter:brightness(.9); }
-.shortcut-native-from-here { display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; min-height:58px; padding:9px 8px; border:0; border-top:1px solid var(--line); background:transparent; color:var(--text); font:inherit; text-align:left; }
+.shortcut-native-from-here { display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; min-height:58px; padding:9px 8px; border:0; border-top:1px solid rgba(255,190,0,.24); background:rgba(255,190,0,.1); color:#ffe39a; font:inherit; text-align:left; }
 .shortcut-native-from-here-copy { min-width:0; display:flex; flex-direction:column; gap:2px; }
 .shortcut-native-from-here-copy strong,.shortcut-native-from-here-copy small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.shortcut-native-from-here-copy strong { color:var(--text); font-size:15px; font-weight:500; line-height:20px; }
+.shortcut-native-from-here-copy strong { color:#ffe39a; font-size:15px; font-weight:600; line-height:20px; }
 .shortcut-native-from-here-copy small { color:var(--text2); font-size:var(--type-caption,11px); line-height:15px; }
 .shortcut-native-from-here span.shortcut-native-from-here-icon { flex:none; color:var(--text3); font-size:20px; }
 .shortcut-native-from-here:disabled { opacity:.38; }
@@ -950,7 +1067,7 @@ button.album-tile { padding:0; border:0; background:none; color:var(--text); fon
 .shortcut-native-from-here:active:not(:disabled) { background:var(--surface2); border-radius:8px; }
 .shortcut-sheet > button {
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  width: 100%; min-height: 50px; padding: 12px 8px; border: 0; border-top: 1px solid var(--line);
+  width: 100%; min-height: 44px; padding: 8px; border: 0; border-top: 1px solid var(--line);
   background: transparent; color: var(--text); font: inherit; font-size: 15px; text-align: left;
 }
 .shortcut-sheet > button span { color: var(--text3); font-size: 20px; }
@@ -1033,7 +1150,7 @@ button.album-tile { padding:0; border:0; background:none; color:var(--text); fon
 .ranking-tabs .seg-item { flex: 1 0 auto; padding: 0 8px; white-space: nowrap; font-size: 13px; }
 .ranking-month-tabs { margin: 6px 16px 12px; }
 .ranking-month-tabs .seg { padding: 0; border-bottom: 0; background: transparent; gap: 6px; }
-.ranking-month-tabs .seg-item { flex: 0 0 auto; height: 30px; padding: 0 12px; border-radius: 999px; background: var(--surface); color: var(--text2); white-space: nowrap; font-size: var(--type-caption, 12px); }
+.ranking-month-tabs .seg-item { flex: 0 0 auto; height: 30px; padding: 0 12px; border-radius: 999px; background: rgba(20,21,25,.2); color: var(--text2); white-space: nowrap; font-size: var(--type-caption, 12px); }
 .ranking-month-tabs .seg-item.on { color: var(--ink); background: var(--accent); box-shadow: none; font-weight: 700; }
 .screen-periodTop > .ranking-tabs { margin-bottom: 10px; }
 
@@ -1157,9 +1274,11 @@ button.album-tile { padding:0; border:0; background:none; color:var(--text); fon
   flex: none;
   overflow: hidden;
   border-radius: 22px;
-  background: rgb(9,10,12);
+  background: rgba(9,10,12,.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.05);
+  backdrop-filter: blur(18px) saturate(1.05);
   color: #fff;
-  box-shadow: 0 12px 30px rgba(0,0,0,.3);
+  box-shadow: 0 8px 22px rgba(0,0,0,.14), inset 0 0 0 .5px rgba(255,255,255,.05);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   letter-spacing: 0;
 }
@@ -1231,15 +1350,16 @@ button.album-tile { padding:0; border:0; background:none; color:var(--text); fon
 .widget-preview-large-pager button { appearance: none; width: 28px; height: 30px; padding: 0; color: rgba(255,255,255,.7); font: 700 17px/30px system-ui; background: transparent; border: 0; }
 .widget-preview-large-pager button:disabled { color: rgba(255,255,255,.2); }
 .widget-preview-large-queue { min-height: 0; flex: 1; padding-top: 8px; display: flex; flex-direction: column; border-top: .5px solid rgba(255,255,255,.12); }
-.widget-preview-large-row { appearance: none; width: 100%; padding: 0; flex: 0 0 50px; min-height: 50px; display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 8px; align-items: center; color: inherit; text-align: left; font: inherit; background: transparent; border: 0; cursor: pointer; }
+.widget-preview-large-row { appearance: none; width: 100%; padding: 0; flex: 0 0 50px; min-height: 50px; display: grid; grid-template-columns: 20px minmax(0,1fr) auto; gap: 8px; align-items: center; color: inherit; text-align: left; font: inherit; background: transparent; border: 0; cursor: pointer; }
 .widget-preview-large-row > span { color: rgba(255,255,255,.38); font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .widget-preview-large-row-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .widget-preview-large-row-copy > div { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
 .widget-preview-large-row-copy strong,
 .widget-preview-large-row-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.widget-preview-large-row-copy strong { flex: 1; min-width: 0; color: #fff; font-size: 12px; line-height: 15px; font-weight: 650; }
+.widget-preview-large-row-copy strong { flex: 0 1 auto; min-width: 0; color: #fff; font-size: 12px; line-height: 15px; font-weight: 650; }
 .widget-preview-large-row-copy > div > small { flex: none; }
 .widget-preview-large-row-copy small { color: rgba(255,255,255,.5); font-size: 10px; line-height: 12px; font-weight: 500; }
+.widget-preview-large-row-last-played { max-width: 54px; overflow: hidden; color: rgba(255,255,255,.5); font-size: 10px; line-height: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 .widget-preview-large-empty { flex: 1; display: grid; place-items: center; color: rgba(255,255,255,.48); font-size: 12px; }
 .widget-preview-dock { position: absolute; left: 50%; bottom: 16px; width: min(264px, calc(100% - 44px)); height: 64px; padding: 8px 13px; border-radius: 24px; background: rgba(255,255,255,.13); transform: translateX(-50%); display: flex; align-items: center; justify-content: space-between; }
 .widget-preview-dock i { width: 46px; height: 46px; border-radius: 11px; background: #223733; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }

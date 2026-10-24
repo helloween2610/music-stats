@@ -141,7 +141,6 @@ async function runPlayerAction(action: () => Promise<unknown>, notify: (message:
 export function NativeMiniPlayer({ hidden, open, notify }: { hidden?: boolean; open: () => void; notify: (message: string) => void }) {
   const { state } = useSyncExternalStore(subscribeNativePlayer, nativePlayerSnapshot, nativePlayerSnapshot);
   const now = state?.nowPlaying;
-  const songDetail = useNativeSongDetail(now);
   const visible = !hidden && hasTrack(now?.title);
   useEffect(() => {
     const height = visible ? "82px" : "0px";
@@ -157,10 +156,10 @@ export function NativeMiniPlayer({ hidden, open, notify }: { hidden?: boolean; o
   const total = state?.queue.length ?? 0;
   const currentIndex = state?.currentIndex ?? -1;
   const remaining = total ? Math.max(0, total - (currentIndex >= 0 ? currentIndex + 1 : 0)) : 0;
-  const shortcut = playerShortcut({ id: now.persistentID, trackID: songDetail?.trackID || now.trackID, title: now.title, artist: now.subtitle, album: now.album, year: now.year, duration: now.duration });
+  const shortcut = playerShortcut({ id: now.persistentID, trackID: now.trackID, title: now.title, artist: now.subtitle, album: now.album, year: now.year, duration: now.duration });
   return <div className="native-mini-player" role="group" aria-label="Bài đang phát">
-    <ShortcutTarget entity={shortcut} singleTapActivates><button type="button" className="native-mini-main" onClick={open} aria-label={`Mở Đang phát: ${now.title}`}>
-      <PlayerArtwork id={now.persistentID} title={now.title} statsLine={now.statsLine} className="native-mini-art" />
+    <ShortcutTarget entity={shortcut}><button type="button" className="native-mini-main" onClick={open} aria-label={`Menu bài hát: ${now.title}. Chạm hai lần để mở Đang phát`}>
+      <PlayerArtwork id={now.persistentID} title={now.title} statsLine={now.inLibrary === false ? undefined : now.statsLine} className="native-mini-art" />
       <span className="native-mini-copy">
         <span className="ell">{now.subtitle}</span>
         <strong><span className="native-mini-title">{now.title}</span><small>{time(now.duration)}</small></strong>
@@ -184,13 +183,17 @@ export function NativeMiniPlayer({ hidden, open, notify }: { hidden?: boolean; o
 }
 
 export function NativeAppBackdrop() {
-  const { state } = useSyncExternalStore(subscribeNativePlayer, nativePlayerSnapshot, nativePlayerSnapshot);
-  const now = state?.nowPlaying;
-  if (!now || !hasTrack(now.title) || !now.persistentID) return null;
-  const artwork = nativePlayerArtworkUrl(now.persistentID);
+  const artworkID=useSyncExternalStore(subscribeNativePlayer, backdropArtworkID, backdropArtworkID);
+  if (!artworkID) return null;
+  const artwork = nativePlayerArtworkUrl(artworkID);
   return <div className="native-app-backdrop" aria-hidden="true">
     <img key={artwork} src={artwork} alt="" />
   </div>;
+}
+
+function backdropArtworkID() {
+  const now=nativePlayerSnapshot().state?.nowPlaying;
+  return now && hasTrack(now.title)?now.persistentID:'';
 }
 
 type QueueDragPreview = { from: number; target: number; mode: "move" | "remove" } | null;
@@ -407,13 +410,14 @@ export function NowPlayingScreen({ c }: { c: Ctx }) {
   const dismissTimer = useRef<ReturnType<typeof setTimeout>>();
   const playerScroll = useRef<HTMLDivElement>(null);
   const dismissGesture = useRef({ tracking: false, active: false, x: 0, y: 0, lastY: 0, startedAt: 0 });
-  const close = () => {
-    if (window.history.length > 1) window.history.back();
-    else c.goTab("overview");
-  };
+  const close = () => c.back();
   const closeRef = useRef(close);
   closeRef.current = close;
   useEffect(() => setSeek(null), [now?.persistentID]);
+  useEffect(() => {
+    const timer = setTimeout(() => void refreshNativePlayer(), 550);
+    return () => clearTimeout(timer);
+  }, []);
   useEffect(() => () => {
     clearTimeout(optimisticTimer.current);
     clearTimeout(dismissTimer.current);
@@ -552,7 +556,7 @@ export function NowPlayingScreen({ c }: { c: Ctx }) {
       onPointerUp={event => { if (event.pointerType === "mouse") finishDismiss(); }}
       onPointerCancel={event => { if (event.pointerType === "mouse") finishDismiss(); }}>
       <main className="native-now-playing" aria-label="Đang phát">
-      <ShortcutTarget entity={shortcut}><PlayerArtwork id={now.persistentID} title={now.title} statsLine={now.statsLine} className="native-player-cover" aria-label={`Mở menu bài hát: ${now.title}`} /></ShortcutTarget>
+      <ShortcutTarget entity={shortcut}><PlayerArtwork id={now.persistentID} title={now.title} statsLine={now.inLibrary === false ? undefined : now.statsLine} className="native-player-cover" aria-label={`Mở menu bài hát: ${now.title}`} /></ShortcutTarget>
       <div className="native-player-scrubber" style={{ "--seek-progress": `${progress}%` } as CSSProperties}>
         <input type="range" min="0" max={Math.max(now.duration, 1)} step="1" value={Math.min(elapsed, Math.max(now.duration, 1))}
           aria-label="Vị trí phát" onChange={event => setSeek(Number(event.currentTarget.value))}

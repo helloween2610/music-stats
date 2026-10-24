@@ -10,6 +10,7 @@ import { applyArtworkRanks } from './lib/artwork-ranks';
 // Lỗi mạng / 401 / 5xx / timeout / sai dạng → giữ dữ liệu server đã lưu, không thay bằng số mẫu.
 import { CAN_WRITE, DATA_SOURCE, DESKTOP_WEB } from "@/config";
 import { fetchJson, invalidate, postJson, lastGood } from "@/lib/api";
+import {sameResponseReferences} from '@/lib/last-good';
 import {
   area, artistMapChart, bar, bump, chgEl, chgInline, chgTxt, grouped, lineChart, listeningCalendar, listeningClock, songHistoryChart, spark, sparkGap, tagStream, vbars, Chg,
 } from "@/lib/charts";
@@ -38,6 +39,7 @@ export type Ctx = {
   set: (fn: (q: UI) => Partial<UI>) => void;
   go: (screen: Screen, id?: string | null, view?: Partial<UI>) => void;
   goTab: (screen: Screen) => void;
+  back: () => void;
   later: (ms: number, fn: () => void) => void;
   ptoast: (msg: string) => void;
 };
@@ -406,21 +408,25 @@ function sampleVM(c: Ctx) {
       metrics: [{ value: vn(art.plays), label: "Lượt nghe" }, { value: fmtH(art.hrs), label: "Thời gian nghe" }, { value: vn(art.days), label: "Ngày có nghe" }],
       wk: rf(rk("Tuần")), mo: rf(rk("Tháng")), all: "#" + art.allRank,
       rline: `7 ngày ${rf(rk("7 ngày"))} · 1 tháng ${rf(rk("1 tháng"))} · 100 ngày ${rf(rk("100 ngày"))} · từ 04/2024 ${rf(rk("Từ 04/2024"))}`,
-      gap: d1(art.gap) + " ngày", lib: `Trong thư viện: ${art.nSongs} bài · ${art.nAlbums} album · ${art.genre}`,
+      gap: d1(art.gap) + " ngày", lib: `Trong thư viện: ${art.nSongs} bài · ${art.nAlbums} Albums · ${art.genre}`,
       hasPts: !!pt, pts: pt ? d1(pt.pts) : "", ptsRank: pt ? "#" + pt.rank : "", parts: pt ? partRows(pt) : [],
       songs: art.songs.map((id: string, k: number) => ({ rank: k + 1, title: SDB[id].t, v: vn(SDB[id].total) + " lượt", onTap: toSong(id) })) },
   };
 }
 
-export type VM = ReturnType<typeof sampleVM> & { isLoading?: boolean; unavailable?: string; album?: any; currentSongChanges?: Record<string,number>; currentSongComparisons?: Record<string,string>; currentSongRanks?: Record<string,number>; currentSongRankGeneration?: string; playlistLibrary?: any[]; playlistArtwork?: Record<string,string>; nowPlayingLibrary?: any[]; todayPlaylistRows?: any[]; periodRisingGroups?: any[]; periodListOnly?: boolean; songRankMonthChips?: any[]; artistRankMonthChips?: any[]; albumRankMonthChips?: any[]; trendMonthChips?: any[] };
+export type VM = ReturnType<typeof sampleVM> & { artwork?: {artists?:Record<string,string>;albums?:Record<string,string>;tracks?:Record<string,string>}; isLoading?: boolean; unavailable?: string; album?: any; currentSongChanges?: Record<string,number>; currentSongComparisons?: Record<string,string>; currentSongRanks?: Record<string,number>; currentSongRankGeneration?: string; playlistLibrary?: any[]; playlistArtwork?: Record<string,string>; nowPlayingLibrary?: any[]; todayPlaylistRows?: any[]; periodRisingGroups?: any[]; periodListOnly?: boolean; songRankMonthChips?: any[]; artistRankMonthChips?: any[]; albumRankMonthChips?: any[]; trendMonthChips?: any[] };
 
 function serverGet(c: Ctx) {
-  const p = c.p, scr = c.screen, D: Any = {}, codes: string[] = [];
+  const p = c.p, scr = c.screen, D: Any = {}, codes: string[] = [], failures: string[] = [];
   let st: "ok" | "loading" | "err" = "ok", stale = false, failed = false;
   const dataTimes: number[] = [];
   const pull = (k: string, path: string, soft?: boolean, cacheOnly = false) => {
     const e = fetchJson(path, cacheOnly);
-    if (!soft && e.st === "err") { failed = true; if (e.code) codes.push(e.code); }
+    if (!soft && e.st === "err") {
+      failed = true;
+      if (e.code) codes.push(e.code);
+      failures.push(`${e.status ?? "lỗi không rõ"}${e.code ? ` · ${e.code}` : ""}`);
+    }
     if (e.data != null) {
       D[k] = e.data;
       if (!soft) {
@@ -721,7 +727,7 @@ function serverGet(c: Ctx) {
     D.albumStats=D.metadataStats;
   }
   if (scr === "rules") pull("rules", "/library/title-rules");
-  return { st: st as "ok" | "loading" | "err", D, codes, stale, failed, dataAt: dataTimes.length ? Math.min(...dataTimes) : 0 };
+  return { st: st as "ok" | "loading" | "err", D, codes, failures: [...new Set(failures)], stale, failed, dataAt: dataTimes.length ? Math.min(...dataTimes) : 0 };
 }
 
 // Ghép thật trên server (token của chủ app); token chỉ đọc thì chỉ đánh dấu trên máy như bản thiết kế.
@@ -1214,7 +1220,7 @@ function mapServer(c: Ctx, D: Any) {
       const dates=D.albumHistoryDates || [];
       const snapshots=dates.map((date:string)=>new Map(rankedAlbums(D['albumHistory'+date]?.rows || [],D.metadataRows || [],sort,o.periodAllTime).map(r=>[r.key,r.rank])));
       const series=current.map((r:Any,k:number)=>({name:r.name+' · '+r.artist,ranks:snapshots.map((ranks:Map<string,number>)=>ranks.get(r.key) ?? null).concat([r.rank]),color:`hsl(${(k*137.508)%360} 55% 40%)`}));
-      o.rankHistoryTitle=`Top ${current.length} album · lịch sử thứ hạng`;
+      o.rankHistoryTitle=`Top ${current.length} Albums · lịch sử thứ hạng`;
       o.rankHistoryNote=o.periodAllTime ? 'Hạng theo giờ nghe và lợi thế số bài, tối đa ở 12 bài. Level chỉ kiểm tra đủ điều kiện. Khoảng trống: chưa đủ điều kiện xếp hạng hoặc ngoài phạm vi biểu đồ.' : 'Hạng theo giờ nghe cộng dồn trong kỳ, tính từ lượt nghe và dữ liệu bài hát hiện có. Khoảng trống: chưa có lượt nghe hoặc ngoài phạm vi biểu đồ.';
       o.rankHistoryChart=series.length?bump(series,dates.map((date:string)=>/^\d{4}-\d{2}$/.test(t.scope)?dm(date):`${date.slice(5,7)}/${date.slice(2,4)}`).concat(['Hiện tại']),{maxRank:current.length,height:Math.max(250,current.length*22+30)}):null;
       if(!series.length)o.rankHistoryNote='Chưa có dữ liệu lịch sử album trong kỳ này.';
@@ -1351,12 +1357,12 @@ function mapServer(c: Ctx, D: Any) {
       const lead = (O.artists || [])[0];
       o.monthSummary = {
         title:isM ? `Tóm tắt tháng ${Number(mm)}` : all ? "Tóm tắt All time" : `Tóm tắt ${scope}`,
-        status:`${vn(T.plays || 0)} lượt · ${vn(T.songs || 0)} bài · ${vn(T.artists || 0)} nghệ sĩ · ${vn(T.albums || 0)} album`,
+        status:`${vn(T.plays || 0)} lượt · ${vn(T.songs || 0)} bài · ${vn(T.artists || 0)} nghệ sĩ · ${vn(T.albums || 0)} Albums`,
         metrics:[
           {value:vn(T.plays || 0),label:"lượt"},
           {value:vn(T.songs || 0),label:"bài"},
           {value:vn(T.artists || 0),label:"nghệ sĩ"},
-          {value:vn(T.albums || 0),label:"album"},
+          {value:vn(T.albums || 0),label:"Albums"},
         ],
         lead:lead ? { an:lead.name, name:lead.name, ini:ini(lead.name), value:fmtH(lead.hours || 0), onTap:()=>openArtists() } : null,
         newArtists:additions.slice(0,3), newCount:additions.length,
@@ -1367,7 +1373,7 @@ function mapServer(c: Ctx, D: Any) {
         openNewSongs, openRisingSongs:()=>openSongs("Đang lên"),
         blocks:isM ? [
           {label:"Top artist",count:"3 nghệ sĩ",rows:topArtists,round:true,onTap:()=>openArtists()},
-          {label:"Top album",count:"3 album",rows:topAlbums,onTap:()=>c.go("periodTop",`albums~${scope}~${viewAsOf}`)},
+          {label:"Top Albums",count:`${topAlbums.length} Albums`,rows:topAlbums,onTap:()=>c.go("periodTop",`albums~${scope}~${viewAsOf}`)},
           {label:"Top song",count:"3 bài",rows:topSongs,onTap:()=>openSongs()},
           {label:"Tăng hạng",count:risingArtists.length ? `${risingArtists.length} nghệ sĩ` : "Chưa có",rows:risingArtists.slice(0,3),round:true,onTap:()=>openArtists("Đang lên")},
         ] : undefined,
@@ -1552,8 +1558,8 @@ function mapServer(c: Ctx, D: Any) {
     const pt = A.points, top = A.topSongs || [];
     o.artist = { an: nm, name: nm, ini: ini(nm), ...flOf(A.flag), sub: `${vn((A.allTime || {}).plays || 0)} lượt · ${fmtH((A.allTime || {}).hours || 0)} · ${vn((A.logged || {}).days || 0)} ngày có nghe`,
       metrics: [{ value: vn(A.allTime?.plays || 0), label: "Lượt nghe" }, { value: fmtH(A.allTime?.hours || 0), label: "Thời gian nghe" }, { value: vn(A.logged?.days || 0), label: "Ngày có nghe" }],
-      wk: rf(rk.week), mo: rf(rk.month), all: rf(rk.at), rline: `7 ngày ${rf(rk.d7)} · 1 tháng ${rf(rk.m1)} · 100 ngày ${rf(rk.d100)} · từ 04/2024 ${rf(rk.ft0424)}`,
-      gap: A.avgGapDays != null ? d1(A.avgGapDays) + " ngày" : "–", lib: `Trong thư viện: ${vn(lib.tracks || 0)} bài · ${vn(lib.albums || 0)} album` + (gen ? " · " + gen : ""),
+      wk: rf(rk.week), mo: rf(rk.month), all: rf(rk.at), rline: `1 tháng ${rf(rk.m1)} · 100 ngày ${rf(rk.d100)} · từ 04/2024 ${rf(rk.ft0424)} · All time ${rf(rk.at)}`,
+      gap: A.avgGapDays != null ? d1(A.avgGapDays) + " ngày" : "–", trackCount: Number(lib.tracks || 0), lib: `Trong thư viện: ${vn(lib.tracks || 0)} bài · ${vn(lib.albums || 0)} Albums` + (gen ? " · " + gen : ""),
       hasPts: !!pt, pts: pt ? d1(pt.points) : "", ptsRank: pt ? "#" + pt.rank : "", parts: pt ? ptRows(pt.parts) : [],
       songs: top.slice(0, 5).map((x: Any, k: number) => ({ tid: x.track_id, artist: nm, rank: x.rank ?? k + 1, title: x.title, v: vn(x.plays) + " lượt", onTap: x.track_id ? toSong(x.track_id) : noop })) };
     o.shareCards = [{ an: nm, isWeek: false, period: "All time · " + dmy(asOf), title: nm, sub: vn(lib.tracks || 0) + " bài trong thư viện",
@@ -1571,7 +1577,7 @@ export function buildVM(c: Ctx): VM {
   // Keep filters available while loading or when the selected scope is unavailable.
   base.scopeChips = chips(SCOPE_ORDER, c.p.scope,
     (scope) => c.set(() => ({ scope, sel: {} })));
-  const { st, D, codes, stale, failed, dataAt } = serverGet(c);
+  const { st, D, codes, failures, stale, failed, dataAt } = serverGet(c);
   const p = c.p;
   // Cache raw server data, not React elements or callbacks tied to old UI state.
   const viewKey = "view:" + JSON.stringify([c.screen, c.id, p.sort, p.scope, p.filter, p.songView, p.songRankAsOf, p.artistFilter, p.artistRankAsOf,p.albumSort,p.albumFilter,p.albumRankAsOf,
@@ -1588,13 +1594,13 @@ export function buildVM(c: Ctx): VM {
       const o = { ...base, ...mapServer(c, previous.data), sampleChip: error, chipText: label(previous.at, error) };
       decorate(o, previous.data.aw);
       applyArtworkRanks(o, D.currentSongRanks?.rows || previous.data.currentSongRanks?.rows, D.currentAlbumRanks?.rows || previous.data.currentAlbumRanks?.rows, D.detailSongHistory || previous.data.detailSongHistory || D.hist || previous.data.hist);
-      enrichMetadata(o, D, c);
+      safelyEnrichMetadata(o, D, c);
       return o;
     } catch { return; }
   };
   const unavailable = (): VM => ({ ...base, unavailable: codes.includes("d1_daily_limit")
     ? "Server tạm nghỉ đến 7:00. Chưa có dữ liệu đã lưu cho màn hình này."
-    : "Không tải được dữ liệu từ server và chưa có dữ liệu đã lưu cho màn hình này." });
+    : `Không tải được dữ liệu từ server${failures.length ? ` (${failures.slice(0, 3).join(", ")})` : ""} và chưa có dữ liệu đã lưu cho màn hình này.` });
   if (st === "err") return savedView(true) || unavailable();
   if (st === "loading") return savedView(failed) || { ...base, isLoading: true };
   try {
@@ -1602,11 +1608,12 @@ export function buildVM(c: Ctx): VM {
     const o = { ...base, ...mapServer(c, D), sampleChip: failed, chipText: label(dataAt, failed) };
     decorate(o, D.aw);
     applyArtworkRanks(o, D.currentSongRanks?.rows, D.currentAlbumRanks?.rows, D.detailSongHistory || D.hist);
-    enrichMetadata(o, D, c);
-    if (!stale && !failed && (previous?.at !== dataAt || JSON.stringify(previous?.data) !== JSON.stringify(viewData))) lastGood.set(viewKey, viewData, dataAt);
+    safelyEnrichMetadata(o, D, c);
+    if (!stale && !failed && (previous?.at !== dataAt || !sameResponseReferences(previous?.data,viewData) && JSON.stringify(previous?.data) !== JSON.stringify(viewData))) lastGood.set(viewKey, viewData, dataAt);
     return o;
   } catch (e) {
-    console.warn("Không đọc được dữ liệu server cho màn " + c.screen, e);
+    const detail = e instanceof Error ? (e.stack || e.message) : String(e);
+    console.warn("Không đọc được dữ liệu server cho màn " + c.screen, detail, "payloads:", Object.keys(D).join(","));
     return savedView(true) || unavailable();
   }
 }
@@ -1614,6 +1621,7 @@ export function buildVM(c: Ctx): VM {
 // Gắn ảnh bìa / avatar từ /artwork: bài theo track_id (tid), album theo "nghệ sĩ␟album" (ak), nghệ sĩ theo tên (an).
 function decorate(o: Any, AW: Any) {
   if (!AW) return;
+  o.artwork = AW;
   const T = AW.tracks || {}, A = AW.artists || {}, B = AW.albums || {};
   const fix = (r: Any) => { if (r && typeof r === "object") r.img = (r.tid && T[r.tid]) || (r.ak && B[r.ak]) || (r.an && A[r.an]) || ""; };
   ["recent", "top5", "top15", "hourArtists", "top100Rows", "artistRows", "periodRows", "albums", "results", "fRes", "shareCards", "weekTable", "rising", "risingAll"].forEach((k) => (o[k] || []).forEach(fix));
@@ -1687,11 +1695,31 @@ function enrichMetadata(o: Any, D: Any, c: Ctx) {
     };
   });
   if(c.screen === "artist" && o.artist) {
-    const names=[...new Set(D.metadataRows.filter((t:Any)=>(t.album_artist || t.artist)===o.artist.name && t.album && t.in_library!==0).map((t:Any)=>albumKey(t)))];
+    const names=[...new Set(D.metadataRows.filter((t:Any)=>(t.album_artist || t.artist)===o.artist.name && t.album && t.in_library!==0).map((t:Any)=>albumKey(t)))]
+      .filter((key:string)=>!key.split(US)[1]?.toLocaleLowerCase().includes('archive'));
     o.artist.albums=names.map((key:any)=>{
       const [artist,title]=key.split(US),group=index.albums[key];
-      return {ak:key,title,artist,ini:ini(title),img:D.aw?.albums?.[key],metadata:collectionMetadata(group,today,true),allTimeRank:D.currentAlbumRanks?.rows?.find((r:Any)=>r.album_artist+US+r.album===key)?.rank,onTap:()=>c.go("album",albumId(artist,title))};
-    }).sort((a:Any,b:Any)=>a.title.localeCompare(b.title));
+      const years=group?.years ? [...group.years].map(Number).filter((year:number)=>year>0) : [];
+      const year=years.length ? Math.min(...years) : 0;
+      return {ak:key,title,artist,year,ini:ini(title),img:D.aw?.albums?.[key],metadata:collectionMetadata(group,today,true),
+        allTimeMetric:group?.allPlays>0?`${vn(group.allPlays)} lượt`:undefined,
+        allTimeListening:group?.allPlays>0?fmtH(group.allHours || 0):undefined,
+        artistTone:artistTone(index.artists[artist]?.allHours || 0),
+        allTimeRank:D.currentAlbumRanks?.rows?.find((r:Any)=>r.album_artist+US+r.album===key)?.rank,onTap:()=>c.go("album",albumId(artist,title))};
+    }).sort((a:Any,b:Any)=>(a.year||Number.MAX_SAFE_INTEGER)-(b.year||Number.MAX_SAFE_INTEGER)||a.title.localeCompare(b.title));
+    o.artist.allSongs=Object.values(index.tracks).filter((track:Any)=>track.in_library!==0&&(
+      fold(track.artist)===fold(o.artist.name)||fold(track.album_artist)===fold(o.artist.name)
+    )).sort((a:Any,b:Any)=>(Number(a.year)||Number.MAX_SAFE_INTEGER)-(Number(b.year)||Number.MAX_SAFE_INTEGER)
+      ||String(a.album||'').localeCompare(String(b.album||''))||(Number(a.disc)||0)-(Number(b.disc)||0)
+      ||(Number(a.track)||Number(a.track_number)||0)-(Number(b.track)||Number(b.track_number)||0)
+      ||String(a.title||'').localeCompare(String(b.title||''))).map((track:Any)=>({
+        tid:track.id,title:track.title,artist:track.artist||o.artist.name,album:track.album,albumArtist:track.album_artist||track.artist,
+        year:track.year,metric:`${vn(track.allPlays||0)} lượt`,listening:fmtH(track.allHours||0),onTap:track.id?()=>c.go("song",track.id):()=>{},
+      }));
+  }
+  if(c.screen === "album" && o.album) {
+    o.album.ak ||= albumKey({album_artist:o.album.artist,album:o.album.title});
+    o.album.artistTone=artistTone(index.artists[o.album.artist]?.allHours || 0);
   }
   const fix = (r: Any) => {
     if (!r) return;
@@ -1713,6 +1741,9 @@ function enrichMetadata(o: Any, D: Any, c: Ctx) {
       r.allTimeMetric = t.allPlays == null ? undefined : `${vn(t.allPlays)} lượt`;
       r.allTimeListening = t.allHours == null ? undefined : fmtH(t.allHours);
       r.allTimeMetadata = trackMetadata(t, today);
+      const trackAlbum=index.albums[albumKey(t)];
+      r.albumAllTimeMetric=trackAlbum?.allPlays>0?`${vn(trackAlbum.allPlays)} lượt`:undefined;
+      r.albumAllTimeListening=trackAlbum?.allPlays>0?fmtH(trackAlbum.allHours || 0):undefined;
       if(t.album)r.goAlbum=()=>c.go("album",albumId(t.album_artist || t.artist || "",t.album));
       if (!r.metric && !r.v && t.allPlays != null) r.metric = `${vn(t.allPlays)} lượt`;
       if (r.periodPlays != null && t.duration_s > 0) r.listening = fmtH(r.periodPlays * t.duration_s / 3600);
@@ -1734,7 +1765,7 @@ function enrichMetadata(o: Any, D: Any, c: Ctx) {
   };
   ["recent", "top5", "top15", "top100Rows", "artistRows", "periodRows", "hourArtists", "albums", "results", "rising", "risingAll"].forEach(k => (o[k] || []).forEach(fix));
   (o.risingArtists || []).forEach((g: Any) => (g.rows || []).forEach(fix));
-  fix(o.song); fix(o.artist); (o.artist?.songs || []).forEach(fix); (o.album?.songs || []).forEach(fix);
+  fix(o.song); fix(o.artist); fix(o.album); (o.artist?.songs || []).forEach(fix); (o.artist?.allSongs || []).forEach(fix); (o.album?.songs || []).forEach(fix);
   const attachSectionQueue=(rows:Any[],label:string)=>{
     const items=rows.map(row=>({persistentId:row?.applePid || row?.apple_pid || row?.persistentId,artist:row?.artist,title:row?.title,album:row?.originalAlbum || row?.album}));
     rows.forEach((row,index)=>{
@@ -1745,12 +1776,13 @@ function enrichMetadata(o: Any, D: Any, c: Ctx) {
   attachSectionQueue(o.top5 || [],o.top5Title || 'Top songs');
   attachSectionQueue(o.top15 || [],o.topSongsTitle || 'Top songs');
   attachSectionQueue(o.top100Rows || [],'Top 100 bài All time');
-  attachSectionQueue((o.periodRows || []).slice(0,listDisplayLimit(false,p.periodListSize)),o.topPeriodTitle || 'Top theo kỳ');
+  attachSectionQueue((o.periodRows || []).slice(0,listDisplayLimit(false,c.p.periodListSize)),o.topPeriodTitle || 'Top theo kỳ');
   attachSectionQueue(o.results || [],'Kết quả tìm kiếm');
   attachSectionQueue(o.fRes || [],o.findLabel || 'Kết quả tìm kiếm');
   attachSectionQueue(o.rising || [],'Bài hát đang lên');
   attachSectionQueue(o.risingAll || [],'Bài hát đang lên');
   attachSectionQueue(o.artist?.songs || [],o.artist?.name || 'Bài hát của nghệ sĩ');
+  attachSectionQueue(o.artist?.allSongs || [],o.artist?.name || 'Bài hát của nghệ sĩ');
   attachSectionQueue(o.album?.songs || [],o.album?.title || 'Bài hát trong album');
   const t = index.tracks[o.song?.tid];
   if (t) {
@@ -1761,5 +1793,19 @@ function enrichMetadata(o: Any, D: Any, c: Ctx) {
       t.genre && { k: 'Thể loại', v: t.genre },
     ].filter(Boolean);
     o.song.info = [...extra, ...o.song.info];
+  }
+}
+
+function safelyEnrichMetadata(o: Any, D: Any, c: Ctx) {
+  try {
+    enrichMetadata(o, D, c);
+  } catch (error) {
+    const value = error as Any;
+    console.warn(
+      `Không bổ sung được metadata cho màn ${c.screen}`,
+      value?.name || typeof error,
+      value?.message || String(error),
+      value?.stack || "",
+    );
   }
 }

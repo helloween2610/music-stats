@@ -159,6 +159,7 @@ private struct StatsWidgetQueueItem: Codable {
     let statsLine: String
     let plays: Int
     let duration: Int
+    let lastPlayed: String?
 }
 
 private struct BridgeRequestEvent {
@@ -519,8 +520,8 @@ final class PebbleMusicBridge {
         BridgeBootstrap(playlists: playlistsForPebble(), nowPlaying: nowPlaying())
     }
 
-    func nowPlaying() -> BridgeNowPlaying {
-        refreshNowPlaying()
+    func nowPlaying(refreshQueue: Bool = true) -> BridgeNowPlaying {
+        refreshNowPlaying(refreshQueue: refreshQueue)
         let item = player.nowPlayingItem
         let lastfm = nowStatsItemInLibrary ? nil : lastfmStatsByKey[nowStatsKey]
         let metrics = item.map { item in
@@ -545,10 +546,34 @@ final class PebbleMusicBridge {
         )
     }
 
-    func playerState() -> BridgePlayerState {
-        let now = nowPlaying()
+    private(set) var playerStateTiming = ""
+    private var cachedPlayerState: BridgePlayerState?
+    private var cachedSystemQueueCount: UInt = 0
+    private var cachedSystemQueueIndex = -1
+
+    func playerState(includeQueue: Bool = true) -> BridgePlayerState {
+        let timingStart = ProcessInfo.processInfo.systemUptime
+        let now = nowPlaying(refreshQueue: false)
+        let timingNow = ProcessInfo.processInfo.systemUptime
+        // Polling elapsed time must not enumerate hundreds of MediaPlayer objects on the UI thread.
+        if !includeQueue, let cached = cachedPlayerState,
+           cached.nowPlaying.persistentID == now.persistentID,
+           cached.nowPlaying.title == now.title,
+           cached.nowPlaying.subtitle == now.subtitle,
+           cached.nowPlaying.album == now.album,
+           !systemQueuePositionChanged() {
+            playerStateTiming = String(format: "now;dur=%.2f, queue;dur=%.2f, rows;dur=0", (timingNow - timingStart) * 1000, (ProcessInfo.processInfo.systemUptime - timingNow) * 1000)
+            return BridgePlayerState(
+                nowPlaying: now, queue: cached.queue, currentIndex: cached.currentIndex,
+                queueTitle: cached.queueTitle, queueEditable: cached.queueEditable,
+                repeatMode: player.repeatMode == .one ? "one" : player.repeatMode == .all ? "all" : "none",
+                shuffleMode: player.shuffleMode == .songs ? "songs" : "off",
+                recentPlayStarts: cached.recentPlayStarts
+            )
+        }
         refreshSystemQueueIfAvailable()
         syncManagedQueueIndex()
+        let timingQueue = ProcessInfo.processInfo.systemUptime
         if libraryTrackIDs.isEmpty, MPMediaLibrary.authorizationStatus() == .authorized {
             refreshLibraryTrackIndex()
         }
@@ -584,9 +609,11 @@ final class PebbleMusicBridge {
                 current: index == managedQueueIndex
             )
         }
+        let timingRows = ProcessInfo.processInfo.systemUptime
+        playerStateTiming = String(format: "now;dur=%.2f, queue;dur=%.2f, rows;dur=%.2f", (timingNow - timingStart) * 1000, (timingQueue - timingNow) * 1000, (timingRows - timingQueue) * 1000)
         let repeatMode = player.repeatMode == .one ? "one" : player.repeatMode == .all ? "all" : "none"
         let shuffleMode = player.shuffleMode == .songs ? "songs" : "off"
-        return BridgePlayerState(
+        let state = BridgePlayerState(
             nowPlaying: now,
             queue: rows,
             currentIndex: managedQueueIndex,
@@ -596,6 +623,9 @@ final class PebbleMusicBridge {
             shuffleMode: shuffleMode,
             recentPlayStarts: recentPlayStarts()
         )
+        cachedPlayerState = state
+        publishWidgetSnapshot(item: player.nowPlayingItem)
+        return state
     }
 
     func artworkData(persistentID: UInt64, size: CGFloat = 360) -> Data? {
@@ -1361,7 +1391,7 @@ final class PebbleMusicBridge {
         player.beginGeneratingPlaybackNotifications()
     }
 
-    private func refreshNowPlaying() {
+    private func refreshNowPlaying(refreshQueue: Bool = true) {
         let item = player.nowPlayingItem
         nowTitle = item?.title?.nonEmpty ?? "Nothing playing"
         nowSubtitle = item?.artist?.nonEmpty ?? "Choose playlist"
@@ -1372,6 +1402,7 @@ final class PebbleMusicBridge {
         nowElapsed = player.currentPlaybackTime.isFinite ? Int(player.currentPlaybackTime) : 0
         isPlaying = player.playbackState == .playing
         recordRecentPlayStartIfNeeded(item)
+        guard refreshQueue else { return }
         if let item,
            !managedQueue.contains(where: { Self.sameMediaItem($0, item) }) {
             refreshSystemQueueIfAvailable()
@@ -1391,18 +1422,25 @@ final class PebbleMusicBridge {
             let duration = pair.element.playbackDuration
             if duration.isFinite { total += max(0, Int(duration)) }
         }
+        let starts = recentPlayStarts()
         let widgetQueue = managedQueue.enumerated().filter { index, _ in
             index > managedQueueIndex
         }.prefix(40).map { _, queueItem in
             let queueKey = Self.trackKey(artist: queueItem.artist ?? "", album: queueItem.albumTitle, title: queueItem.title ?? "")
             let queueMetrics = allTimeMetrics(for: queueItem, key: queueKey)
+            let recordedStart = starts[Self.persistentHex(queueItem.persistentID)].flatMap(ISO8601DateFormatter().date)
+            let libraryItem = libraryItemsByID[queueItem.persistentID]
+            let lastPlayed = [queueItem.lastPlayedDate, libraryItem?.lastPlayedDate, recordedStart]
+                .compactMap { $0 }
+                .max()
             return StatsWidgetQueueItem(
                 title: queueItem.title?.nonEmpty ?? "Untitled Song",
                 artist: queueItem.artist?.nonEmpty ?? "",
                 year: Self.releaseYear(queueItem),
                 statsLine: allTimeRankLine(for: queueItem, key: queueKey) ?? "",
                 plays: queueMetrics.plays,
-                duration: queueItem.playbackDuration.isFinite ? Int(queueItem.playbackDuration) : 0
+                duration: queueItem.playbackDuration.isFinite ? Int(queueItem.playbackDuration) : 0,
+                lastPlayed: lastPlayed.map(Self.isoString)
             )
         }
         let snapshot = StatsWidgetSnapshot(
@@ -1438,7 +1476,7 @@ final class PebbleMusicBridge {
             String(snapshot.queuePosition),
             String(snapshot.queueCount),
             String(snapshot.queueUpcomingDuration),
-            snapshot.queue.map { "\($0.title)|\($0.artist)|\($0.year)|\($0.statsLine)|\($0.plays)|\($0.duration)" }.joined(separator: "\u{1E}"),
+            snapshot.queue.map { "\($0.title)|\($0.artist)|\($0.year)|\($0.statsLine)|\($0.plays)|\($0.duration)|\($0.lastPlayed ?? "")" }.joined(separator: "\u{1E}"),
         ].joined(separator: "\u{1F}")
         guard signature != lastWidgetSignature else { return }
         lastWidgetSignature = signature
@@ -1617,8 +1655,17 @@ final class PebbleMusicBridge {
         }
     }
 
+    private func systemQueuePositionChanged() -> Bool {
+        guard cachedSystemQueueIndex == player.indexOfNowPlayingItem else { return true }
+        let selector = NSSelectorFromString("numberOfItems")
+        guard player.responds(to: selector) else { return false }
+        let count = unsafeBitCast(player.method(for: selector), to: QueueItemCountFunction.self)(player, selector)
+        return count != cachedSystemQueueCount
+    }
+
     private func refreshSystemQueueIfAvailable() {
         guard let current = player.nowPlayingItem else { return }
+        cachedSystemQueueIndex = player.indexOfNowPlayingItem
         beginSystemQueueResponseLoadingIfAvailable()
 
         let countSelector = NSSelectorFromString("numberOfItems")
@@ -1631,6 +1678,7 @@ final class PebbleMusicBridge {
         let countImplementation = player.method(for: countSelector)
         let itemImplementation = player.method(for: itemSelector)
         let itemCount = unsafeBitCast(countImplementation, to: QueueItemCountFunction.self)(player, countSelector)
+        cachedSystemQueueCount = itemCount
         guard itemCount > 0, itemCount <= 10_000 else {
             setSystemQueueFallback(current)
             return
@@ -1869,7 +1917,7 @@ final class PebbleMusicBridge {
             return
         }
 
-        nowStatsLine = lastfmStatsCache[key] ?? ""
+        nowStatsLine = ""
         fetchLastfmStatsIfNeeded(key: key, artist: artist, title: title)
     }
 

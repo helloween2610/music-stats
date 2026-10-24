@@ -42,15 +42,20 @@ function iosPebblePreview(): Plugin {
 }
 
 function iosPebbleBundle(): Plugin {
+  const diagnostics = process.env.STATS_MOTION_DIAGNOSTICS === "1";
   const inject = [
     { tag: "link", attrs: { rel: "stylesheet", href: "./pebble-ios.css" }, injectTo: "head" as const },
     { tag: "script", attrs: { src: "./pebble-ios.js" }, injectTo: "body" as const },
+    ...(diagnostics ? [{ tag: "script", attrs: { src: "./menu-motion.js" }, injectTo: "body" as const }] : []),
   ];
 
   return {
     name: "ios-pebble-bundle",
     transformIndexHtml: { order: "post", handler: () => inject },
     generateBundle() {
+      if (diagnostics) {
+        this.emitFile({ type: "asset", fileName: "menu-motion.js", source: readFileSync(new URL("./ios/diagnostics/menu-motion.js", import.meta.url), "utf8") });
+      }
       for (const asset of pebbleAssets) {
         const source = readPebbleAsset(asset.fileName);
         if (source) {

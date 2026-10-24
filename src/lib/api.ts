@@ -1,7 +1,8 @@
 // Đọc dữ liệu từ server. Kết quả lưu theo path, dùng chung cho mọi màn.
 // Giữ bản thành công gần nhất trong máy; luôn thử tải mới khi mở lại app. Timeout 12 giây.
 // Path lỗi được gọi lại sau 30 giây, khi màn được vẽ lại.
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useRef } from "react";
+import {affectsApiReads,collectApiReads,recordApiRead} from './api-read-scope';
 import {ServerRefreshSchedule, serverRefreshWindow} from "./server-refresh-schedule";
 import { API_BASE, API_TOKEN, FETCH_TIMEOUT_MS, DATA_SOURCE } from "@/config";
 import { LastGoodStore, cacheScope, validResponse } from "./last-good";
@@ -9,6 +10,13 @@ import { LastGoodStore, cacheScope, validResponse } from "./last-good";
 let storage: Storage | undefined;
 try { storage = window.localStorage; } catch {}
 export const lastGood = new LastGoodStore(cacheScope(API_BASE, API_TOKEN), storage);
+
+export const artworkStore = new LastGoodStore(cacheScope(API_BASE, API_TOKEN) + ':artwork', storage);
+const legacyArtwork = lastGood.get('/artwork');
+if (!artworkStore.get('/artwork') && legacyArtwork && validResponse('/artwork', legacyArtwork.data)) {
+  lastGood.removeWhere(path => path === '/artwork');
+  artworkStore.set('/artwork', legacyArtwork.data, legacyArtwork.at, legacyArtwork.generation);
+}
 
 const libraryMetadataStore = new LastGoodStore(cacheScope(API_BASE, API_TOKEN) + ':library-metadata', storage);
 
@@ -27,16 +35,19 @@ const RETRY_MS = 30000;
 export const CLIENT_CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const CACHE = new Map<string, Entry>();
 const FORCE_REFRESH = new Set<string>();
-const SUBS = new Set<() => void>();
-const notify = () => SUBS.forEach((f) => f());
+const SUBS = new Set<(path?:string) => void>();
+const notify = (path?:string) => SUBS.forEach((f) => f(path));
 
 export function fetchJson(path: string, cacheOnly = false): Entry {
+  recordApiRead(path);
   const old = CACHE.get(path);
   if (old && (old.st === "loading" || old.st === "err" && Date.now() - old.at <= RETRY_MS
     || old.st === "ok" && Date.now() - old.dataAt < CLIENT_CACHE_MAX_AGE_MS)) return old;
   if (old) CACHE.delete(path);
   const metadata = path.startsWith('/library/metadata?');
-  const saved = (metadata ? libraryMetadataStore : lastGood).get(path);
+  const persistentStore = path === '/artwork' ? artworkStore : metadata ? libraryMetadataStore : lastGood;
+  const saved = persistentStore.get(path);
+  if (path === '/artwork') cacheOnly = true;
   const valid = saved && validResponse(path, saved.data) ? saved : undefined;
   if (cacheOnly && valid) {
     FORCE_REFRESH.delete(path);
@@ -77,9 +88,7 @@ export function fetchJson(path: string, cacheOnly = false): Entry {
       (d) => {
         if (CACHE.get(path) !== e) return; // Ignore a response invalidated during the request.
         e.st = "ok"; e.data = d; e.dataAt = Date.now();
-        if (metadata) {
-          libraryMetadataStore.set(path, d, e.dataAt, e.generation);
-        } else lastGood.set(path, d, e.dataAt, e.generation);
+        persistentStore.set(path, d, e.dataAt, e.generation);
       },
       (err) => {
         e.st = "err";
@@ -90,7 +99,7 @@ export function fetchJson(path: string, cacheOnly = false): Entry {
     .finally(() => {
       e.at = Date.now();
       clearTimeout(to);
-      notify();
+      notify(path);
     });
   return e;
 }
@@ -145,16 +154,36 @@ export function refreshServerData(): Promise<boolean> {
   return refreshing;
 }
 
+// Scheduled slots are checks, not unconditional invalidations. Saved payloads stay
+// visible while the lightweight revision request runs, including after reopening.
+let checkingRevision: Promise<boolean> | null = null;
+export function checkServerChanges(): Promise<boolean> {
+  if (checkingRevision) return checkingRevision;
+  checkingRevision = (async () => {
+    try {
+      const state = await getFresh('/data-version');
+      if (typeof state?.revision !== 'string' || typeof state?.day !== 'string') return false;
+      const previous = lastGood.get('server-revision')?.data;
+      lastGood.set('server-revision', state);
+      if (previous?.revision === state.revision && previous?.day === state.day) return false;
+      invalidate(path => path !== '/artwork' && !path.startsWith('/library/metadata?'));
+      return true;
+    } catch { return false; } // retain the saved screen offline
+  })().finally(() => { checkingRevision = null; });
+  return checkingRevision;
+}
+
 // One timer for the next worker sync + five minutes, not an interval from app launch.
 export function useServerUpdates() {
   useEffect(() => {
     if (DATA_SOURCE !== 'Server') return;
     const schedule = new ServerRefreshSchedule(Date.now());
+    void checkServerChanges();
     let timer: ReturnType<typeof setTimeout>;
     const check = () => {
       clearTimeout(timer);
       const now = Date.now();
-      if (schedule.takeDue(now, !document.hidden && navigator.onLine !== false)) void refreshServerData();
+      if (schedule.takeDue(now, !document.hidden && navigator.onLine !== false)) void checkServerChanges();
       timer = setTimeout(check, Math.max(1, serverRefreshWindow(now).next - now));
     };
     check();
@@ -172,15 +201,24 @@ export function useServerUpdates() {
 
 // Vẽ lại component khi có request bất kỳ hoàn tất, và mỗi 31 giây nếu còn path lỗi.
 export function useApiRefresh() {
-  const [, bump] = useReducer((x: number) => x + 1, 0);
+  const [revision, bump] = useReducer((x: number) => x + 1, 0);
+  const paths=useRef<Set<string>>();
   useEffect(() => {
     let raf = 0;
-    const sub = () => {
-      if (!raf) raf = requestAnimationFrame(() => { raf = 0; bump(); });
+    const redraw = () => {
+      // Preserve the moving frame; apply the latest response once the transition settles.
+      if(document.querySelector('.zaui-routes-forward-enter-active,.zaui-routes-backward-enter-active,.zaui-routes-no-animation-enter-active,.shortcut-backdrop:not([data-entered]),.shortcut-backdrop[data-closing],.shortcut-sheet[data-dragging]')){
+        raf=requestAnimationFrame(redraw);return;
+      }
+      raf=0;bump();
+    };
+    const sub = (path?:string) => {
+      if(!affectsApiReads(paths.current,path))return;
+      if (!raf) raf = requestAnimationFrame(redraw);
     };
     SUBS.add(sub);
     const iv = setInterval(() => {
-      if ([...CACHE.values()].some((e) => e.st === "err" && Date.now() - e.at > RETRY_MS)) bump();
+      if ([...CACHE.values()].some((e) => affectsApiReads(paths.current,e.path) && e.st === "err" && Date.now() - e.at > RETRY_MS)) sub();
     }, RETRY_MS + 1000);
     return () => {
       SUBS.delete(sub);
@@ -188,4 +226,10 @@ export function useApiRefresh() {
       if (raf) cancelAnimationFrame(raf);
     };
   }, []);
+  const readView=<T,>(read:()=>T):T=>{
+    const collected=collectApiReads(read);
+    paths.current=collected.paths;
+    return collected.value;
+  };
+  return Object.assign(readView,{revision});
 }

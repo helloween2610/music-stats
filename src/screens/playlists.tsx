@@ -3,6 +3,7 @@ import { applyArtworkRanks } from '@/lib/artwork-ranks';
 import { fetchJson } from '@/lib/api';
 import { SongListeningMetrics } from '@/components/song-listening-metrics';
 import { songShortcut } from '@/components/shortcuts';
+import { ShortcutSheetNav, useSheetMotion, useSheetSwipeDismiss } from '@/components/shortcut-sheet-controls';
 import { ArtworkRank } from '@/components/artwork-rank';
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
@@ -174,7 +175,9 @@ ${displayMeta.explanation}` : playlist.path+' / '+playlist.name;
     </div> : <span className="playlist-tile-count t3">{playlist.items.length} bài</span>}
   </button>;
 }
-function PlaylistMenu({playlist,pebble,c,close,onPebbleChange,onExclude}:{playlist:Playlist;pebble:boolean;c:Ctx;close:()=>void;onPebbleChange:(enabled:boolean)=>void;onExclude:()=>void}) {
+function PlaylistMenu({playlist,pebble,c,close:onDismiss,onPebbleChange,onExclude}:{playlist:Playlist;pebble:boolean;c:Ctx;close:()=>void;onPebbleChange:(enabled:boolean)=>void;onExclude:()=>void}) {
+  const {close,exit,motionProps}=useSheetMotion(onDismiss);
+  const swipeDismiss=useSheetSwipeDismiss(close);
   const panel=useRef<HTMLDivElement>(null);
   const ignoreClicksUntil=useRef(0);
   const actionIntent=useRef(false);
@@ -216,22 +219,24 @@ function PlaylistMenu({playlist,pebble,c,close,onPebbleChange,onExclude}:{playli
     onPointerDown:(event:PointerEvent)=>{if(event.isPrimary && event.button===0)actionIntent.current=true;},
     onKeyDown:(event:KeyboardEvent)=>{if(event.key==='Enter'||event.key===' ')actionIntent.current=true;},
   };
-  return createPortal(<div className="shortcut-backdrop" onClick={event=>{if(event.target===event.currentTarget)close();}}>
-    <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={'Playlist actions: '+playlist.name} className="shortcut-sheet" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();close();}}}>
-      <div className="shortcut-handle"/>
-      <button type="button" className="shortcut-heading shortcut-heading-link" onClick={()=>{close();c.go('playlist',playlist.id);}}><strong>{playlist.name}</strong><span className="t3">{playlist.path} · {vn(playlist.items.length)} bài</span></button>
+  return createPortal(<div {...motionProps} className="shortcut-backdrop" onClick={event=>{if(event.target===event.currentTarget)close();}}>
+    <div {...swipeDismiss} ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={'Playlist actions: '+playlist.name} className="shortcut-sheet" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();close();}}}>
+      <ShortcutSheetNav canBack back={close} close={close}/>
+      <button type="button" className="shortcut-heading shortcut-heading-link" onClick={()=>exit(()=>{onDismiss();c.go('playlist',playlist.id);})}><strong>{playlist.name}</strong><span className="t3">{playlist.path} · {vn(playlist.items.length)} bài</span></button>
       <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>void run('pebble')}>{busy==='pebble'?(pebble?'Đang loại…':'Đang thêm…'):(pebble?'Loại khỏi Pebble':'Thêm vào Pebble')} <span>{pebble?'−':'＋'}</span></button>
       <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>void run('play')}>{busy==='play'?'Đang phát…':'Phát playlist'} <span aria-hidden="true">▶</span></button>
       <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>void run('next')}>{busy==='next'?'Đang thêm…':'Phát tiếp theo'} <span aria-hidden="true">↳</span></button>
       <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>void run('music')}>{busy==='music'?'Đang mở…':'Open in Music'} <span>↗</span></button>
-      <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>{const intended=actionIntent.current;actionIntent.current=false;if(!intended||Date.now()<ignoreClicksUntil.current)return;close();c.go('topPlaylists');}}>Go to Top playlist <span>▦</span></button>
+      <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>{const intended=actionIntent.current;actionIntent.current=false;if(!intended||Date.now()<ignoreClicksUntil.current)return;exit(()=>{onDismiss();c.go('topPlaylists');});}}>Go to Top playlist <span>▦</span></button>
       <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>{const intended=actionIntent.current;actionIntent.current=false;if(!intended||Date.now()<ignoreClicksUntil.current)return;onExclude();}}>Exclude khỏi ranking <span>⊘</span></button>
       <button type="button" className="shortcut-close" onClick={close}>Đóng</button>
     </div>
   </div>,document.body);
 }
 
-export function WidgetPlaylistActionMenu({playlist,c,close}:{playlist:Playlist;c:Ctx;close:()=>void}) {
+export function WidgetPlaylistActionMenu({playlist,c,close:onDismiss}:{playlist:Playlist;c:Ctx;close:()=>void}) {
+  const {close,exit,motionProps}=useSheetMotion(onDismiss);
+  const swipeDismiss=useSheetSwipeDismiss(close);
   const [busy,setBusy]=useState('');
   async function run(kind:'play'|'next'|'music') {
     if(busy)return;
@@ -249,13 +254,13 @@ export function WidgetPlaylistActionMenu({playlist,c,close}:{playlist:Playlist;c
       setBusy('');
     }
   }
-  return createPortal(<div className="shortcut-backdrop" onClick={event=>{if(event.target===event.currentTarget)close();}}>
-    <div role="dialog" aria-modal="true" aria-label={'Playlist actions: '+playlist.name} className="shortcut-sheet">
-      <div className="shortcut-handle"/>
-      <button type="button" className="shortcut-heading shortcut-heading-link" onClick={()=>{close();c.go('playlist',playlist.id);}}><strong>{playlist.name}</strong><span className="t3">{playlist.path} · {vn(playlist.items.length)} bài</span></button>
+  return createPortal(<div {...motionProps} className="shortcut-backdrop" onClick={event=>{if(event.target===event.currentTarget)close();}}>
+    <div {...swipeDismiss} role="dialog" aria-modal="true" aria-label={'Playlist actions: '+playlist.name} className="shortcut-sheet">
+      <ShortcutSheetNav canBack back={close} close={close}/>
+      <button type="button" className="shortcut-heading shortcut-heading-link" onClick={()=>exit(()=>{onDismiss();c.go('playlist',playlist.id);})}><strong>{playlist.name}</strong><span className="t3">{playlist.path} · {vn(playlist.items.length)} bài</span></button>
       <button type="button" disabled={!!busy} onClick={()=>void run('play')}>{busy==='play'?'Đang phát…':'Phát playlist'} <span aria-hidden="true">▶</span></button>
       <button type="button" disabled={!!busy} onClick={()=>void run('next')}>{busy==='next'?'Đang thêm…':'Phát tiếp theo'} <span aria-hidden="true">↳</span></button>
-      <button type="button" disabled={!!busy} onClick={()=>{close();c.go('playlist',playlist.id);}}>Mở chi tiết playlist <span aria-hidden="true">›</span></button>
+      <button type="button" disabled={!!busy} onClick={()=>exit(()=>{onDismiss();c.go('playlist',playlist.id);})}>Mở chi tiết playlist <span aria-hidden="true">›</span></button>
       <button type="button" disabled={!!busy} onClick={()=>void run('music')}>{busy==='music'?'Đang mở…':'Open in Music'} <span aria-hidden="true">↗</span></button>
       <button type="button" className="shortcut-close" onClick={close}>Đóng</button>
     </div>

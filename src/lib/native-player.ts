@@ -34,6 +34,7 @@ let snapshot: NativePlayerSnapshot = { state: BROWSER_PREVIEW ? previewState : n
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 let request: Promise<void> | null = null;
+let requestIncludesQueue = false;
 
 function publish(next: NativePlayerSnapshot) {
   snapshot = next;
@@ -44,11 +45,16 @@ export function nativePlayerSnapshot() {
   return snapshot;
 }
 
-export async function refreshNativePlayer(): Promise<void> {
+export async function refreshNativePlayer(options?: { includeQueue: boolean } | Event): Promise<void> {
   if (BROWSER_PREVIEW) return;
   if (!IOS_APP) return;
-  if (request) return request;
-  request = loadNativePlayerState()
+  const includeQueue = !options || !("includeQueue" in options) || options.includeQueue;
+  if (request) {
+    if (includeQueue && !requestIncludesQueue) return request.then(() => refreshNativePlayer());
+    return request;
+  }
+  requestIncludesQueue = includeQueue;
+  request = loadNativePlayerState(includeQueue)
     .then(state => publish({ state, loading: false, error: "" }))
     .catch(error => publish({
       state: snapshot.state,
@@ -108,7 +114,7 @@ function start() {
   if ((!IOS_APP && !BROWSER_PREVIEW) || clockTimer) return;
   if (IOS_APP) {
     void refreshNativePlayer();
-    pollTimer = setInterval(() => { if (!document.hidden) void refreshNativePlayer(); }, 1500);
+    pollTimer = setInterval(() => { if (!document.hidden) void refreshNativePlayer({ includeQueue: false }); }, 1500);
   }
   clockTimer = setInterval(() => {
     const state = snapshot.state;

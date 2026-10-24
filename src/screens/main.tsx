@@ -3,6 +3,7 @@ import { SongListeningMetrics } from '@/components/song-listening-metrics';
 import { SongRankProgress } from '@/components/song-rank-progress';
 import { LastfmScrobbleRefreshButton, LastfmTrackMetrics } from '@/components/lastfm-track-metrics';
 import { ShortcutTarget, songShortcut, artistShortcut, albumShortcut, RankFocus } from '@/components/shortcuts';
+import { ShortcutSheetNav, useSheetMotion, useSheetSwipeDismiss } from '@/components/shortcut-sheet-controls';
 import { AlbumGrid } from '@/components/album-grid';
 import {listDisplayLimit} from "@/lib/list-preferences";
 import { ArtworkRank } from '@/components/artwork-rank';
@@ -246,8 +247,6 @@ export function TodayScreen({ vm, c }: P) {
           </div>
         </div>
       </div>
-      <div className="num" style={{ padding: "10px 20px 0", fontSize: "var(--type-caption, 12px)", color: "var(--text3)" }}>{vm.totalLine}</div>
-
       <SecSide title="Top nghệ sĩ tuần này" side="xếp theo giờ nghe" />
       <div className="card" style={{ padding: "6px 0 4px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) repeat(7,22px) 28px", gap: 3, padding: "6px 12px", fontSize: "var(--type-caption, 11px)", fontWeight: 600, color: "var(--text3)", textAlign: "center" }}>
@@ -311,7 +310,7 @@ export const SongListRow = ({ r, right, hideAlbum = false, hideArtist = false, s
       {!hideArtist && <MetadataHelp item={{title:'Màu nghệ sĩ',text:r.artist}}><div className={`song-artist-line sub13 ell tone-${r.artistTone || 'gray'}`}>{showListRank && Number.isInteger(r.rank) && r.rank > 0 && <span className="song-list-number num">{r.rank}.</span>}<span className="ell">{r.artist}</span></div></MetadataHelp>}
       <SongTitle title={r.title} tone={r.titleTone} items={r.metadata} trackNumber={r.trackNumber} />
       <div className="song-album-line">
-        {!hideAlbum && (r.albumDisplay || r.album) && (r.albumDisplay ? <div className="song-album ell" title={r.albumDisplay}>{r.albumDisplay}</div> : r.goAlbum ? <ShortcutTarget entity={albumShortcut({title:r.album,artist:r.albumArtist || r.artist,onTap:r.goAlbum})}><button type="button" className="song-album ell album-name-link" title={r.album} aria-label={`Mở album: ${r.album}`} onClick={e=>{e.stopPropagation();r.goAlbum();}}>{r.album}</button></ShortcutTarget> : <div className="song-album ell" title={r.album}>{r.album}</div>)}
+        {!hideAlbum && (r.albumDisplay || r.album) && (r.albumDisplay ? <div className="song-album ell" title={r.albumDisplay}>{r.albumDisplay}</div> : r.goAlbum ? <ShortcutTarget entity={albumShortcut({title:r.album,artist:r.albumArtist || r.artist,onTap:r.goAlbum,allTimeMetric:r.albumAllTimeMetric,allTimeListening:r.albumAllTimeListening,artistTone:r.artistTone})}><button type="button" className="song-album ell album-name-link" title={r.album} aria-label={`Mở album: ${r.album}`} onClick={e=>{e.stopPropagation();r.goAlbum();}}>{r.album}</button></ShortcutTarget> : <div className="song-album ell" title={r.album}>{r.album}</div>)}
         <MusicMetadata items={r.metadata} />
         {r.unmatched && !r.metadata?.some((m:Any)=>m.title==='Năm phát hành') && <RecentAlbumYear artist={r.artist} title={r.title} album={r.album} />}
       </div>
@@ -517,12 +516,6 @@ export function OverviewScreen({ vm, c, hideScopeTabs = false }: P & { hideScope
           <Sec>Lượt nghe theo tháng</Sec>
           <ChartCard readout={vm.rd.month}>
             {vm.ch.month}
-            {vm.hasBefore && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: "var(--type-caption, 11px)", color: "var(--text2)" }}>
-                <div style={{ width: 8, height: 8, borderRadius: 2, background: "var(--text3)" }} />
-                {vm.beforeL}
-              </div>
-            )}
           </ChartCard>
         </section>
         <section>
@@ -768,7 +761,9 @@ ${r.explanation}`} aria-label={`${r.rank}. ${r.name}${r.change?r.change>0?`; tă
   </button>;
 }
 
-function TopPlaylistActionMenu({playlist,pebble,c,close,onPebbleChange,onExclude}:{playlist:Playlist;pebble:boolean;c:Ctx;close:()=>void;onPebbleChange:(enabled:boolean)=>void;onExclude:()=>void}) {
+function TopPlaylistActionMenu({playlist,pebble,c,close:onDismiss,onPebbleChange,onExclude}:{playlist:Playlist;pebble:boolean;c:Ctx;close:()=>void;onPebbleChange:(enabled:boolean)=>void;onExclude:()=>void}) {
+  const {close,exit,motionProps}=useSheetMotion(onDismiss);
+  const swipeDismiss=useSheetSwipeDismiss(close);
   const panel=useRef<HTMLDivElement>(null);
   const ignoreClicksUntil=useRef(0);
   const actionIntent=useRef(false);
@@ -810,15 +805,15 @@ function TopPlaylistActionMenu({playlist,pebble,c,close,onPebbleChange,onExclude
     onPointerDown:(event:PointerEvent)=>{if(event.isPrimary && event.button===0)actionIntent.current=true;},
     onKeyDown:(event:KeyboardEvent)=>{if(event.key==='Enter'||event.key===' ')actionIntent.current=true;},
   };
-  return createPortal(<div className="shortcut-backdrop" onClick={event=>{if(event.target===event.currentTarget)close();}}>
-    <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={'Playlist actions: '+playlist.name} className="shortcut-sheet" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();close();}}}>
-      <div className="shortcut-handle"/>
-      <button type="button" className="shortcut-heading shortcut-heading-link" onClick={()=>{close();c.go('playlist',playlist.id);}}><strong>{playlist.name}</strong><span className="t3">{playlist.path} · {vn(playlist.items.length)} bài</span></button>
+  return createPortal(<div {...motionProps} className="shortcut-backdrop" onClick={event=>{if(event.target===event.currentTarget)close();}}>
+    <div {...swipeDismiss} ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={'Playlist actions: '+playlist.name} className="shortcut-sheet" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();close();}}}>
+      <ShortcutSheetNav canBack back={close} close={close}/>
+      <button type="button" className="shortcut-heading shortcut-heading-link" onClick={()=>exit(()=>{onDismiss();c.go('playlist',playlist.id);})}><strong>{playlist.name}</strong><span className="t3">{playlist.path} · {vn(playlist.items.length)} bài</span></button>
       <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>void run('pebble')}>{busy==='pebble'?(pebble?'Đang loại…':'Đang thêm…'):(pebble?'Loại khỏi Pebble':'Thêm vào Pebble')} <span>{pebble?'−':'＋'}</span></button>
       <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>void run('play')}>{busy==='play'?'Đang phát…':'Phát playlist'} <span aria-hidden="true">▶</span></button>
       <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>void run('next')}>{busy==='next'?'Đang thêm…':'Phát tiếp theo'} <span aria-hidden="true">↳</span></button>
       <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>void run('music')}>{busy==='music'?'Đang mở…':'Open in Music'} <span>↗</span></button>
-      <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>{const intended=actionIntent.current;actionIntent.current=false;if(!intended||Date.now()<ignoreClicksUntil.current)return;close();c.go('topPlaylists');}}>Go to Top playlist <span>▦</span></button>
+      <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>{const intended=actionIntent.current;actionIntent.current=false;if(!intended||Date.now()<ignoreClicksUntil.current)return;exit(()=>{onDismiss();c.go('topPlaylists');});}}>Go to Top playlist <span>▦</span></button>
       <button type="button" disabled={!!busy} {...actionEvents} onClick={()=>{const intended=actionIntent.current;actionIntent.current=false;if(!intended||Date.now()<ignoreClicksUntil.current)return;onExclude();}}>Exclude khỏi ranking <span>⊘</span></button>
       <button type="button" className="shortcut-close" onClick={close}>Đóng</button>
     </div>

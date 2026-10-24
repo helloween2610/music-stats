@@ -40,7 +40,8 @@ export function vbars(vals: number[], labels: string[], o: Any = {}) {
     if (labels[i]) k.push(lbl(x + bw / 2, H - 4, labels[i]));
   });
   if (o.onSel) vals.forEach((_, i) => k.push(hit(i * step, step, H, i, o.onSel)));
-  return frame(W, H, k);
+  const inset = Math.max(0, Number(o.inset) || 0);
+  return frame(W, H, k, inset ? { viewBox: `${-inset} 0 ${W + inset * 2} ${H}` } : {});
 }
 
 // Đồng hồ 24 giờ: 00 ở trên, 06 bên phải, 12 ở dưới, 18 bên trái.

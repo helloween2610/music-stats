@@ -228,3 +228,23 @@ test('read-only refresh reloads server data without syncing Last.fm and keeps da
   assert.ok(calls.every(([path,method])=>path==='/recent' && method==='GET'));
 });
 
+
+test('artwork survives statistics eviction, app reopening and ordinary refresh calls', async()=>{
+ const storage=memoryStorage();let api=await load(storage);
+ const artwork={artists:{A:'saved.jpg'},tracks:{},albums:{}};
+ globalThis.fetch=async()=>reply(artwork);api.fetchJson('/artwork');await flush();
+ for(let i=0;i<6;i++)api.lastGood.set('/large/'+i,{rows:['x'.repeat(900000)]});
+ api=await load(storage);let calls=0;globalThis.fetch=async()=>{calls++;throw Error('unexpected reload');};
+ api.invalidate(()=>true);
+ assert.deepEqual(api.fetchJson('/artwork').data,artwork);await flush();assert.equal(calls,0);
+});
+
+test('revision checks preserve unchanged data and refresh changed data while displaying saved values',async()=>{
+ const api=await load();let revision='1',dataCalls=0;
+ globalThis.fetch=async url=>String(url).endsWith('/data-version')?reply({revision,day:'2026-10-24'}):(dataCalls++,reply(rows));
+ await api.checkServerChanges();api.fetchJson('/recent');await flush();
+ assert.equal(dataCalls,1);assert.equal(await api.checkServerChanges(),false);
+ api.fetchJson('/recent');await flush();assert.equal(dataCalls,1);
+ revision='2';assert.equal(await api.checkServerChanges(),true);
+ const reloading=api.fetchJson('/recent');assert.deepEqual(reloading.data,rows);await flush();assert.equal(dataCalls,2);
+});

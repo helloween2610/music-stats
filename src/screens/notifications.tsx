@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useSyncExternalStore} from 'react';
 import {Thumb} from '@/components/ui';
+import {useSheetMotion} from '@/components/shortcut-sheet-controls';
 import {albumId} from '@/lib/albums';
 import {rememberReleaseAlbum} from '@/lib/discovery';
 import {loadMoreNotifications,loadNotifications,markNotificationsRead,notificationSnapshot,subscribeNotifications,updateNotificationSettings,type NotificationArtwork,type NotificationItem,type NotificationSettings} from '@/lib/notifications';
@@ -98,15 +99,16 @@ export function NotificationsScreen({c}:{c:Ctx}){
 }
 
 
-export function NotificationsPopup({c,close}:{c:Ctx;close:()=>void}){
+export function NotificationsPopup({c,close:onDismiss}:{c:Ctx;close:()=>void}){
+  const {close,exit,motionProps}=useSheetMotion(onDismiss);
   const dialog=useRef<HTMLDialogElement>(null);
   useEffect(()=>{
     const node=dialog.current;
     node?.showModal();
     return()=>node?.close();
   },[]);
-  const context={...c,go:(...args:Parameters<Ctx['go']>)=>{close();c.go(...args);}};
-  return <dialog ref={dialog} className="notification-popup" aria-labelledby="notification-popup-title" onCancel={close} onClose={close} onClick={e=>{if(e.target===e.currentTarget)close();}}>
+  const context={...c,go:(...args:Parameters<Ctx['go']>)=>exit(()=>{onDismiss();c.go(...args);})};
+  return <dialog {...motionProps} ref={dialog} className="notification-popup" aria-labelledby="notification-popup-title" onCancel={event=>{event.preventDefault();close();}} onClose={onDismiss} onClick={e=>{if(e.target===e.currentTarget)close();}}>
     <div className="notification-popup-content">
       <header><h2 id="notification-popup-title">Thông báo</h2><button type="button" autoFocus aria-label="Đóng thông báo" onClick={close}>×</button></header>
       <div className="notification-popup-scroll"><NotificationsScreen c={context}/></div>

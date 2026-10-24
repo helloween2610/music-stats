@@ -1,6 +1,11 @@
 // Bounded persistent cache. Failed storage writes still retain data for this session.
 export type Saved = { data: any; at: number; generation?: string };
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
+export function sameResponseReferences(previous:Record<string,unknown>|undefined,current:Record<string,unknown>) {
+  if(!previous)return false;
+  const keys=Object.keys(current);
+  return keys.length===Object.keys(previous).length && keys.every(key=>Object.prototype.hasOwnProperty.call(previous,key) && previous[key]===current[key]);
+}
 export class LastGoodStore {
   private entries: Record<string, Saved> = {};
   private entrySizes = new Map<string, number>();

@@ -1,0 +1,5 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./app-Dj1rEXLA.js","./preload-helper-lMf9uHy8.js","./app-CN1k5_S2.css","./desktop-pzqz90MV.css","./browser-B6lCjGAM.css"])))=>i.map(i=>d[i]);
+import{_ as e}from"./preload-helper-lMf9uHy8.js";const i=new URLSearchParams(window.location.search),t=window.location.pathname.replace(/\/$/,""),a=i.has("desktop")||t.endsWith("/web")||t.endsWith("/web.html");async function r(){if(i.has("embed")||a){document.body.classList.add("browser-preview"),a&&document.body.classList.add("browser-desktop"),await e(()=>import("./app-Dj1rEXLA.js"),__vite__mapDeps([0,1,2]),import.meta.url),a&&await e(()=>Promise.resolve({}),__vite__mapDeps([3]),import.meta.url);return}await e(()=>Promise.resolve({}),__vite__mapDeps([4]),import.meta.url);const o=i.get("nowPlaying")==="mock"?"&nowPlaying=mock":"";document.getElementById("app").innerHTML=`
+    <main class="preview-stage" aria-label="Giao diện Sổ Nghe Nhạc">
+      <div class="preview-version">VERSION 2</div><div class="phone"><iframe title="Sổ Nghe Nhạc" src="./browser.html?embed=1${o}"></iframe></div>
+    </main>`}r();

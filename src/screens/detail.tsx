@@ -17,7 +17,7 @@ import { SongListRow } from "./main";
 // Thư viện, Bài chưa khớp, Chi tiết bài, Chi tiết nghệ sĩ.
 import { SHOW_SHARE } from "./main";
 import { Ctx, VM } from "@/vm";
-import { ChartCard, PartRows, SampleChip, Sec, Spin, Thumb } from "@/components/ui";
+import { ChartCard, PartRows, SampleChip, Sec, SecLink, Spin, Thumb } from "@/components/ui";
 import { MonthlySummaryReadout } from '@/components/month-summary-popup';
 
 type P = { vm: VM; c: Ctx };
@@ -450,7 +450,7 @@ export function SongScreen({ vm, c }: P) {
         {s.info.map((r: Any, k: number) => (
           <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 12, minHeight: 44, alignItems: "center", padding: "0 16px", borderTop: k ? "0.5px solid var(--line)" : 0, fontSize: 15 }}>
             <div className="t2">{r.k}</div>
-            <div className={`num tone-${r.tone || "gray"}`} style={{ textAlign: "right" }}>{r.onTap ? <ShortcutTarget entity={albumShortcut({title:s.album,artist:s.albumArtist || s.artist,onTap:r.onTap})}><button type="button" className="album-name-link acc" onClick={r.onTap} aria-label={`Mở album: ${r.v}`}>{r.v}</button></ShortcutTarget> : r.v}</div>
+            <div className={`num tone-${r.tone || "gray"}`} style={{ textAlign: "right" }}>{r.onTap ? <ShortcutTarget entity={albumShortcut({title:s.album,artist:s.albumArtist || s.artist,onTap:r.onTap,allTimeMetric:s.albumAllTimeMetric,allTimeListening:s.albumAllTimeListening,artistTone:s.artistTone})}><button type="button" className="album-name-link acc" onClick={r.onTap} aria-label={`Mở album: ${r.v}`}>{r.v}</button></ShortcutTarget> : r.v}</div>
           </div>
         ))}
       </div>
@@ -463,51 +463,38 @@ export function SongScreen({ vm, c }: P) {
 
 export function ArtistScreen({ vm, c }: P) {
   const a = vm.artist as any;
+  const artistEntity = artistShortcut(a);
   return (
     <>
       <SampleChip show={vm.sampleChip} text={vm.chipText} />
-      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 16px 0" }}>
+      <div className="artist-detail-header">
         <AppleMusicArtwork query={{kind:'artist',artist:a.name}} notify={c.ptoast} round>
           <Thumb ini={a.ini} img={a.img} round size={112} style={{ fontSize: 14, background: "repeating-linear-gradient(135deg,var(--surface2) 0 6px,var(--surface) 6px 7px)" }} />
         </AppleMusicArtwork>
-        <div style={{ minWidth: 0 }}>
-          <ShortcutTarget entity={artistShortcut(a)}><div className={`pretty tone-${a.titleTone || "gray"}`} style={{ fontSize: 24, fontWeight: 700, letterSpacing: -0.5 }}>{a.name}</div></ShortcutTarget>
-          {a.hot && <div className="acc" style={{ fontSize: "var(--type-caption, 12px)", fontWeight: 700, marginTop: 2 }}>* đang nghe nhiều</div>}
-          {a.cold && <div className="pretty" style={{ fontSize: "var(--type-caption, 12px)", fontWeight: 700, color: "var(--down)", marginTop: 2 }}>!!! top 10 từ 04/2024 nhưng gần đây ít nghe</div>}
+        <div className="artist-detail-header-summary">
+          <div className="artist-detail-header-copy">
+            <ShortcutTarget entity={artistEntity}><div className={`pretty tone-${a.titleTone || "gray"}`}>{a.name}</div></ShortcutTarget>
+            <MusicMetadata items={artistEntity.metadata}/>
+          </div>
+          {(artistEntity.listening||artistEntity.plays)&&<div className="artist-detail-header-metrics num">
+            {artistEntity.listening&&<strong>{artistEntity.listening}</strong>}
+            {artistEntity.plays&&<span>{artistEntity.plays}</span>}
+          </div>}
         </div>
       </div>
 
-      <div className="artist-summary-metrics">
-        {a.metrics.map((m: Any, i: number) => <div key={m.label} className="stat-box">
-          <div className={`num metric-value${i === 1 ? " metric-duration" : ""}`}>{m.value}</div>
-          <div className="t2 metric-label">{m.label}</div>
-        </div>)}
-      </div>
-      <div style={{ margin: "14px 16px 0", display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
-        {[[a.wk, "Tuần"], [a.mo, "Tháng"], [a.all, "All time"]].map(([v, l]) => (
-          <div key={l} className="stat-box">
-            <div className="num" style={{ fontSize: 22, fontWeight: 700, lineHeight: 1 }}>{v}</div>
-            <div className="t2" style={{ fontSize: "var(--type-caption, 11px)", marginTop: 4 }}>{l}</div>
-          </div>
-        ))}
-      </div>
-      <div className="num t2 pretty" style={{ padding: "8px 20px 0", fontSize: "var(--type-caption, 12px)" }}>{a.rline}</div>
-      <div style={{ margin: "10px 16px 0", background: "var(--surface)", borderRadius: 14, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
-        <div className="t2" style={{ fontSize: 14 }}>Khoảng cách trung bình giữa các ngày nghe</div>
-        <div className="num" style={{ flex: "none", fontSize: 17, fontWeight: 700 }}>{a.gap}</div>
-      </div>
-      <div className="sub13 pretty" style={{ padding: "8px 20px 0" }}>{a.lib}</div>
       {SHOW_SHARE && <div className="btn-wide" onClick={() => c.set(() => ({ sheet: true, toast: "" }))}>Chia sẻ số liệu nghệ sĩ</div>}
-      <div className="detail-chart-grid artist-detail-charts"><section>
-      <div className="sec-side detail-chart-heading detail-chart-heading-readout-only">
-        <div className="side num pretty"><MonthlySummaryReadout value={vm.rd.ah} c={c} months={vm.periodOptions?.ah} onMonthSelect={index => c.set(q => ({ sel: { ...q.sel, ah: index } }))}/></div>
-      </div>
-      <ChartCard>{vm.ch.ah}</ChartCard>
-      </section><section><div className="sec" style={{ marginTop: 22 }}>Lượt theo tuần · 26 tuần gần nhất</div>
-      <ChartCard readout={vm.rd.aw}>{vm.ch.aw}</ChartCard>
-      </section></div>
+      <SecLink title="Top bài" link={`Xem tất cả · ${Number(a.trackCount || 0).toLocaleString('vi-VN')} bài`} onTap={()=>c.go('artistSongs',c.id)} />
+      {a.songs.length > 0 ? (
+        <div className="card">
+          {a.songs.map((r: Any, k: number) => <SongListRow key={k} r={r} />)}
+        </div>
+      ) : (
+        <div className="card sub13" style={{ padding: "18px 16px", textAlign: "center" }}>Chưa có bài nào của nghệ sĩ này trong dữ liệu.</div>
+      )}
+      {!!a.albums?.length && <><div className="sec">{a.albums.length} Albums trong thư viện</div><AlbumGrid albums={a.albums}/></>}
       {a.hasPts && (
-        <div className="card" style={{ marginTop: 10, padding: 14 }}>
+        <div className="card" style={{ marginTop: 20, padding: 14 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
             <div className="lbl">Điểm</div>
             <div className="sub13">hạng điểm {a.ptsRank}</div>
@@ -516,15 +503,21 @@ export function ArtistScreen({ vm, c }: P) {
           <div style={{ marginTop: 12 }}><PartRows parts={a.parts} /></div>
         </div>
       )}
-      {!!a.albums?.length && <><div className="sec">Album trong thư viện · {a.albums.length}</div><AlbumGrid albums={a.albums}/></>}
-      <div className="sec" style={{ marginTop: 22 }}>Top bài</div>
-      {a.songs.length > 0 ? (
-        <div className="card">
-          {a.songs.map((r: Any, k: number) => <SongListRow key={k} r={r} />)}
-        </div>
-      ) : (
-        <div className="card sub13" style={{ padding: "18px 16px", textAlign: "center" }}>Chưa có bài nào của nghệ sĩ này trong dữ liệu.</div>
-      )}
     </>
   );
+}
+
+export function ArtistSongsScreen({ vm }: P) {
+  const artist = vm.artist as any;
+  const songs = artist?.allSongs || [];
+  const trackCount = Number(artist?.trackCount || songs.length || 0).toLocaleString('vi-VN');
+  return <>
+    <div className="sec-side">
+      <div className="sec">{artist?.name || 'Nghệ sĩ'} · {trackCount} bài</div>
+      <div className="side">cũ đến mới</div>
+    </div>
+    {songs.length ? <div className="card artist-all-songs">
+      {songs.map((row:Any,index:number)=><SongListRow key={row.tid || index} r={row} hideArtist/>) }
+    </div> : <div className="card sub13" style={{padding:'18px 16px',textAlign:'center'}}>Chưa có bài nào trong thư viện.</div>}
+  </>;
 }

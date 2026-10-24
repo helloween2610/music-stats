@@ -795,6 +795,18 @@ test('Back follows page parents, skipping filters and sibling details', () => {
   assert.equal(app.parentPage({screen:'song',id:'deep-link'},4,{}).screen,'library');
 });
 
+test('Now Playing dismisses to the exact page that opened it', () => {
+  for (const from of [
+    {screen:'overview'},
+    {screen:'artist',id:'MONO'},
+    {screen:'periodTop',id:'albums~all'},
+  ]) {
+    const player={screen:'player'};
+    const parents=app.rememberParent(from,player,2,{});
+    assert.deepEqual(app.parentPage(player,2,parents),from);
+  }
+});
+
 test('period artists filter uses All time gains independently of period ranks and sorting', async () => {
   app.invalidate(()=>true);
   const previous=[{name:'Falling',hours:4,plays:2},{name:'Steady',hours:3,plays:3},{name:'Rising',hours:2,plays:4}];

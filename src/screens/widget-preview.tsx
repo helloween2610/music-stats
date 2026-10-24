@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { controlNativePlayer, nativePlayerArtworkUrl, playNativeQueueItem, playPlaylistInNativeApp } from "@/lib/ios-bridge";
 import { nativePlayerSnapshot, subscribeNativePlayer } from "@/lib/native-player";
+import { elapsedAgeLabel, lastPlayedColor } from "@/lib/metadata";
+import { fmtWhen } from "@/lib/fmt";
 import { buildPlaylistPeriodRows, loadPlaylistSnapshot, readPlaylistRankExcludes, type Playlist, type PlaylistSnapshot } from "@/lib/playlists";
 import type { Ctx, VM } from "@/vm";
 
@@ -118,9 +120,12 @@ function LargeWidget({ state }: { state: NonNullable<ReturnType<typeof nativePla
     <div className="widget-preview-large-queue">
       {upcoming.map((item, offset) => {
         const steps = page * 4 + offset + 1;
+        const lastPlayed = item.lastPlayed;
         return <button type="button" className="widget-preview-large-row" key={`${item.id}-${offset}`} aria-label={`Phát ${item.title}`} onClick={() => void playNativeQueueItem(state.currentIndex + steps)}>
         <span>{state.currentIndex + steps + 1}</span>
         <div className="widget-preview-large-row-copy"><div><strong>{item.title}</strong><small>{trackDuration(item.duration || 0)}</small></div><small>{[item.artist, item.year].filter(Boolean).join(" ")}</small></div>
+        <small className="widget-preview-large-row-last-played" style={lastPlayed ? { color: lastPlayedColor(lastPlayed) } : undefined}
+          title={lastPlayed ? `Lần nghe cuối: ${fmtWhen(lastPlayed)}` : "Chưa có lần nghe"}>{lastPlayed ? `▷${elapsedAgeLabel(lastPlayed)}` : "—"}</small>
       </button>})}
       {!upcoming.length && <div className="widget-preview-large-empty">Đã hết queue</div>}
     </div>

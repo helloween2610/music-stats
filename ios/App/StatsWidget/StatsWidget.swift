@@ -21,6 +21,7 @@ private struct StatsWidgetQueueItem: Codable {
     let statsLine: String
     let plays: Int
     let duration: Int
+    let lastPlayed: String?
 }
 
 private struct StatsWidgetSnapshot: Codable {
@@ -58,10 +59,10 @@ private struct StatsWidgetSnapshot: Codable {
         queueCount: 4,
         queueUpcomingDuration: 1_274,
         queue: [
-            StatsWidgetQueueItem(title: "Stand Ablaze", artist: "In Flames", year: "1994", statsLine: "#88 ▲86", plays: 41, duration: 275),
-            StatsWidgetQueueItem(title: "Memento Mori 2.0", artist: "Aephanemer", year: "2026", statsLine: "#185 ▼6", plays: 26, duration: 453),
-            StatsWidgetQueueItem(title: "Sleeping Sun", artist: "Nightwish", year: "1998", statsLine: "#102 ▲14", plays: 33, duration: 244),
-            StatsWidgetQueueItem(title: "Moonshield", artist: "In Flames", year: "1996", statsLine: "#82 ▲88", plays: 17, duration: 302),
+            StatsWidgetQueueItem(title: "Stand Ablaze", artist: "In Flames", year: "1994", statsLine: "#88 ▲86", plays: 41, duration: 275, lastPlayed: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-5 * 3600))),
+            StatsWidgetQueueItem(title: "Memento Mori 2.0", artist: "Aephanemer", year: "2026", statsLine: "#185 ▼6", plays: 26, duration: 453, lastPlayed: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-26 * 3600))),
+            StatsWidgetQueueItem(title: "Sleeping Sun", artist: "Nightwish", year: "1998", statsLine: "#102 ▲14", plays: 33, duration: 244, lastPlayed: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-30 * 3600))),
+            StatsWidgetQueueItem(title: "Moonshield", artist: "In Flames", year: "1996", statsLine: "#82 ▲88", plays: 17, duration: 302, lastPlayed: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-42 * 3600))),
         ]
     )
 
@@ -516,7 +517,6 @@ private struct StatsWidgetContent: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(accent)
                         .frame(width: 30, height: 34)
-                        .background(Color.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 6))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -632,23 +632,60 @@ private struct StatsWidgetContent: View {
                 .foregroundColor(Color.white.opacity(0.38))
                 .frame(width: 20, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(item.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    Text(trackDuration(item.duration))
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundColor(Color.white.opacity(0.5))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
                 Text([item.artist, item.year].filter { !$0.isEmpty }.joined(separator: " "))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(Color.white.opacity(0.5))
                     .lineLimit(1)
             }
-            Spacer(minLength: 6)
-            Text(trackDuration(item.duration))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(lastPlayedLabel(item.lastPlayed))
                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundColor(Color.white.opacity(0.5))
+                .foregroundColor(lastPlayedColor(item.lastPlayed))
+                .lineLimit(1)
+                .frame(maxWidth: 54, alignment: .trailing)
         }
         .frame(height: 50)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
+    }
+
+    private func lastPlayedDate(_ value: String?) -> Date? {
+        guard let value, !value.isEmpty else { return nil }
+        return ISO8601DateFormatter().date(from: value)
+    }
+
+    private func lastPlayedLabel(_ value: String?) -> String {
+        guard let date = lastPlayedDate(value) else { return "—" }
+        let seconds = max(0, Date().timeIntervalSince(date))
+        let days = Int(seconds / 86_400)
+        if days >= 365 { return "▷\(days / 365)y" }
+        if days >= 30 { return "▷\(days / 30)mo" }
+        if days >= 7 { return "▷\(days / 7)w" }
+        if days >= 1 { return "▷\(days)d" }
+        return "▷\(Int(seconds / 3_600))h"
+    }
+
+    private func lastPlayedColor(_ value: String?) -> Color {
+        guard let date = lastPlayedDate(value) else { return Color.white.opacity(0.5) }
+        let hours = max(0, Date().timeIntervalSince(date)) / 3_600
+        if hours < 12 { return Color(red: 0.20, green: 0.78, blue: 0.35) }
+        if hours < 24 { return Color(red: 0.80, green: 0.91, blue: 0.71) }
+        if hours >= 24 * 365 { return Color(red: 0.37, green: 0.19, blue: 0.92) }
+        if hours >= 24 * 182 { return Color(red: 1.0, green: 0.23, blue: 0.19) }
+        if hours >= 24 * 91 { return Color(red: 1.0, green: 0.91, blue: 0.0) }
+        return Color.white.opacity(0.5)
     }
 
     @ViewBuilder private var playbackProgress: some View {
@@ -703,13 +740,22 @@ private struct StatsWidgetContent: View {
 private struct StatsWidgetEntryView: View {
     let entry: StatsWidgetEntry
 
+    private var blendedBackground: some View {
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            Color.black.opacity(0.30)
+        }
+    }
+
     @ViewBuilder var body: some View {
         if #available(iOSApplicationExtension 17.0, *) {
             StatsWidgetContent(entry: entry)
-                .containerBackground(for: .widget) { Color(red: 0.035, green: 0.039, blue: 0.047) }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .containerBackground(for: .widget) { blendedBackground }
         } else {
             StatsWidgetContent(entry: entry)
-                .background(Color(red: 0.035, green: 0.039, blue: 0.047))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(blendedBackground)
         }
     }
 }

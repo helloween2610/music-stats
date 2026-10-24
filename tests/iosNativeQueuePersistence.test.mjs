@@ -33,6 +33,10 @@ test('native app background follows the current artwork outside Now Playing', ()
 });
 
 test('mini player has previous control and month summary metrics stay on one line', () => {
+  const miniPlayer = nativePlayerSource.slice(
+    nativePlayerSource.indexOf('export function NativeMiniPlayer'),
+    nativePlayerSource.indexOf('export function NativeAppBackdrop')
+  );
   assert.match(nativePlayerSource, /aria-label="Bài trước"[\s\S]*controlNativePlayer\("previous"\)/);
   assert.match(nativePlayerSource, /native-mini-title[\s\S]*<small>\{time\(now\.duration\)\}<\/small>/);
   assert.match(nativePlayerSource, /native-mini-year[\s\S]*native-mini-queue-count/);
@@ -42,6 +46,8 @@ test('mini player has previous control and month summary metrics stay on one lin
   assert.match(cssSource, /\.native-mini-album-line \{[^}]*white-space:nowrap/);
   assert.match(cssSource, /\.month-summary-person > \.ell \{[^}]*white-space:nowrap/);
   assert.match(cssSource, /\.month-summary-person b \{[^}]*white-space:nowrap/);
+  assert.doesNotMatch(miniPlayer, /<ShortcutTarget/);
+  assert.match(miniPlayer, /<button type="button" className="native-mini-main" onClick=\{open\}/);
 });
 
 test('native queue restore survives a temporarily unavailable now-playing item', () => {
@@ -181,7 +187,7 @@ test('native playlist tracks expose live Apple Music last-played metadata', () =
   assert.match(tracks, /item\.lastPlayedDate, recordedStart/);
   assert.match(tracks, /lastPlayed: latestPlayed\.map\(Self\.isoString\)/);
   assert.doesNotMatch(tracks, /refresh\(\)|refreshLibraryTrackIndex|libraryItemsByID/);
-  assert.match(webBridge, /cache:\s*"no-store"/);
+  assert.match(webBridge, /StatsMusic\.request\(/);
   assert.match(localServer, /Cache-Control: no-store, max-age=0/);
 });
 
@@ -191,4 +197,9 @@ test('native queue shows library last-played age and preserves out-of-library me
   assert.match(bridge, /lastPlayed: lastPlayed\.map\(Self\.isoString\)/);
   assert.match(nativePlayerSource, /function NativeQueueListeningStatus\([\s\S]*?if \(track\.inLibrary !== false\)[\s\S]*?return <NativeListeningMetrics track=\{track\} inline \/>/);
   assert.match(nativePlayerSource, /elapsedAgeLabel\(lastPlayed\)/);
+});
+
+test('out-of-library now playing never reuses a rank badge', () => {
+  assert.match(bridge, /guard !inLibrary else \{[\s\S]*?nowStatsLine = allTimeRankLine[\s\S]*?nowStatsLine = ""[\s\S]*?fetchLastfmStatsIfNeeded/);
+  assert.match(nativePlayerSource, /statsLine=\{now\.inLibrary === false \? undefined : now\.statsLine\}/);
 });

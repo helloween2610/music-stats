@@ -1,5 +1,6 @@
 import { BROWSER_PREVIEW, IOS_APP } from "@/config";
 import { appleMusicNativeUrl } from "@/lib/apple-music-opening";
+import { registerPlugin } from "@capacitor/core";
 
 export async function shareUrlInNativeApp(url: string, title = "Sổ Nghe Nhạc"): Promise<boolean> {
   if (!IOS_APP) return false;
@@ -46,6 +47,9 @@ export type NativePlaylistTrackSummary = {
 };
 
 const NATIVE_PLAYER_ORIGIN = "http://127.0.0.1:8765";
+const StatsMusic = registerPlugin<{
+  request(options: {path: string; params: Record<string, string>}): Promise<{status: number; body: string}>;
+}>("StatsMusic");
 export const PREVIEW_PLAYER_COMMAND_EVENT = "stats:preview-player-command";
 
 function previewPlayerCommand(detail: Record<string, string | number>) {
@@ -54,20 +58,21 @@ function previewPlayerCommand(detail: Record<string, string | number>) {
 
 async function nativePlayerRequest(path: string, params: Record<string, string | number> = {}, timeoutMs = 5000): Promise<any> {
   if (!IOS_APP || BROWSER_PREVIEW) throw new Error("Trình phát chỉ khả dụng trong app Stats trên iPhone.");
-  const query = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]));
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let timeout: ReturnType<typeof setTimeout>;
   try {
-    const response = await fetch(`${NATIVE_PLAYER_ORIGIN}${path}${query.size ? `?${query}` : ""}`, { cache: "no-store", signal: controller.signal });
-    const data = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(data?.error || "Chưa điều khiển được trình phát.");
+    const response = await Promise.race([
+      StatsMusic.request({path, params: Object.fromEntries(Object.entries(params).map(([key, value]) => [key, String(value)]))}),
+      new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error("Apple Music chưa phản hồi. Hãy kiểm tra trạng thái trước khi thử lại.")), timeoutMs); }),
+    ]);
+    const data = JSON.parse(response.body);
+    if (response.status < 200 || response.status >= 300) throw new Error(data?.error || "Chưa điều khiển được trình phát.");
     return data;
-  } finally { clearTimeout(timeout); }
+  } finally { clearTimeout(timeout!); }
 }
 
-export async function loadNativePlayerState(): Promise<NativePlayerState | null> {
+export async function loadNativePlayerState(includeQueue = true): Promise<NativePlayerState | null> {
   if (!IOS_APP || BROWSER_PREVIEW) return null;
-  return nativePlayerRequest("/player-state", {}, 2200);
+  return nativePlayerRequest("/player-state", { queue: includeQueue ? 1 : 0 }, 2200);
 }
 
 export function nativePlayerArtworkUrl(persistentId: string): string {
@@ -136,8 +141,7 @@ export async function playTrackInNativeApp(persistentId: string, action: NativeT
   if (track.title) params.set("title", track.title);
   if (track.album) params.set("album", track.album);
   if (track.storeId) params.set("sid", track.storeId);
-  const response = await fetch(`http://127.0.0.1:8765/track-action?${params.toString()}`);
-  if (!response.ok) throw new Error("Chưa điều khiển được Apple Music.");
+  await nativePlayerRequest("/track-action", Object.fromEntries(params), 15000);
   return true;
 }
 
@@ -202,9 +206,7 @@ export async function playPlaylistInNativeApp(playlistId: string, action: Native
   if (start.persistentId) params.set("track", start.persistentId);
   if (start.artist) params.set("artist", start.artist);
   if (start.title) params.set("title", start.title);
-  const response = await fetch(`http://127.0.0.1:8765/play?${params.toString()}`);
-  const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.error || "Chưa phát được playlist trong Apple Music.");
+  await nativePlayerRequest("/play", Object.fromEntries(params), 15000);
   return true;
 }
 
@@ -214,9 +216,7 @@ export async function playAlbumInNativeApp(artist: string, album: string, action
   const params = new URLSearchParams({ artist, album, action });
   if (start.persistentId) params.set("track", start.persistentId);
   if (start.title) params.set("title", start.title);
-  const response = await fetch(`http://127.0.0.1:8765/album-action?${params.toString()}`);
-  const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.error || "Chưa phát được album trong Apple Music.");
+  await nativePlayerRequest("/album-action", Object.fromEntries(params), 15000);
   return true;
 }
 
@@ -226,9 +226,7 @@ export async function playSectionFromHereInNativeApp(items: NativeQueueItem[], i
   const ids=items.slice(Math.max(0,index)).map(item=>item.persistentId?.trim() || '').filter(Boolean);
   if(!ids.length)return false;
   const params=new URLSearchParams({ids:ids.join(',')});
-  const response=await fetch(`http://127.0.0.1:8765/queue-action?${params.toString()}`);
-  const data=await response.json().catch(()=>null);
-  if(!response.ok)throw new Error(data?.error || 'Chưa tạo được hàng chờ từ section này.');
+  await nativePlayerRequest("/queue-action", Object.fromEntries(params), 15000);
   return true;
 }
 

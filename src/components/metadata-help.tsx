@@ -1,5 +1,6 @@
 import {createContext,useEffect,useRef,useState,type ReactElement,type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
+import {useSheetMotion,useSheetSwipeDismiss} from './shortcut-sheet-controls';
 import {lockTextSelection} from '@/lib/selection-lock';
 import type {MetaItem} from '@/lib/metadata';
 import type {MetadataExplanation} from '@/lib/metadata-help';
@@ -15,17 +16,19 @@ export function MetadataHelp({item,children}:{item:MetaItem;children:ReactElemen
   void item;
   return children;
 }
-function MetadataHelpSheet({value,close}:{value:MetadataExplanation;close:()=>void}) {
+function MetadataHelpSheet({value,close:onDismiss}:{value:MetadataExplanation;close:()=>void}) {
+  const {close,motionProps}=useSheetMotion(onDismiss);
+  const swipeDismiss=useSheetSwipeDismiss(close);
   const button=useRef<HTMLButtonElement>(null);
   useEffect(()=>{
     const previous=document.activeElement as HTMLElement|null;
     const overflow=document.body.style.overflow;document.body.style.overflow='hidden';
     const unlockSelection=lockTextSelection();
-    button.current?.focus();
+    button.current?.focus({preventScroll:true});
     return()=>{unlockSelection();document.body.style.overflow=overflow;if(previous?.isConnected)previous.focus({preventScroll:true});};
   },[]);
-  return createPortal(<div className="shortcut-backdrop" onClick={e=>{if(e.currentTarget===e.target)close();}}>
-    <div className="shortcut-sheet" role="dialog" aria-modal="true" aria-label={'Quy tắc: '+value.title} onKeyDown={e=>{
+  return createPortal(<div {...motionProps} className="shortcut-backdrop" onClick={e=>{if(e.currentTarget===e.target)close();}}>
+    <div {...swipeDismiss} className="shortcut-sheet" role="dialog" aria-modal="true" aria-label={'Quy tắc: '+value.title} onKeyDown={e=>{
       if(e.key==='Escape'){e.preventDefault();close();}
       if(e.key==='Tab'){e.preventDefault();button.current?.focus();}
     }}>

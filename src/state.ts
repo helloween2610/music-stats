@@ -7,7 +7,7 @@ import type { PageParents } from "@/lib/navigation";
 
 export type Screen =
   | "recent" | "periodTop" | "today" | "top100" | "artistsAll" | "trend" | "overview"
-  | "playlists" | "playlist" | "topPlaylists" | "releases" | "settings" | "library" | "unmatched" | "rules" | "rising" | "song" | "artist" | "album"
+  | "playlists" | "playlist" | "topPlaylists" | "releases" | "settings" | "library" | "unmatched" | "rules" | "rising" | "song" | "artist" | "artistSongs" | "album"
   | "notifications" | "releaseYears" | "overviewLastMonth" | "overviewThisMonth" | "overviewThisYear" | "overviewAllTime"
   | "player" | "widgetPreview";
 
@@ -24,7 +24,7 @@ export const TAB_ICONS = ["zi-calendar", "zi-poll", "zi-more-grid", "zi-gallery"
 export const TITLE: Record<Screen, string> = {
   album: "Album", recent: "Vừa nghe", playlists: "Danh sách playlist", playlist: "Playlist", topPlaylists: "Top Playlists",
   periodTop: "Top theo kỳ", today: "Hôm nay", top100: "Top 100 All time", artistsAll: "Nghệ sĩ All time",
-  trend: "Diễn biến", overview: "Tổng quan", releases: "Sắp ra mắt", settings: "Cài đặt", library: "Cài đặt", unmatched: "Bài chưa khớp", rules: "Quy tắc thay thế", rising: "Bài đang lên hạng", song: "Bài hát", artist: "Nghệ sĩ",
+  trend: "Diễn biến", overview: "Tổng quan", releases: "Sắp ra mắt", settings: "Cài đặt", library: "Cài đặt", unmatched: "Bài chưa khớp", rules: "Quy tắc thay thế", rising: "Bài đang lên hạng", song: "Bài hát", artist: "Nghệ sĩ", artistSongs: "Bài hát của nghệ sĩ",
   notifications: "Thông báo", releaseYears: "Năm phát hành",
   player: "Đang phát",
   widgetPreview: "Widget iPhone",
@@ -57,6 +57,7 @@ export const pathOf = (screen: Screen, id?: string | null) => {
     case "song": return "/song/" + encodeURIComponent(id || "");
     case "album": return "/album/" + encodeURIComponent(id || "");
     case "artist": return "/artist/" + encodeURIComponent(id || "");
+    case "artistSongs": return "/artist-songs/" + encodeURIComponent(id || "");
     case "notifications": return "/notifications";
     case "player": return "/player";
     case "widgetPreview": return "/widget-preview";

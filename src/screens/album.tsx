@@ -8,8 +8,7 @@ import { ini } from '@/lib/fmt';
 import { Ctx, VM } from '@/vm';
 import { AppleMusicArtwork } from '@/components/apple-music-artwork';
 import { compactPlays, MusicMetadata, SongTitle } from '@/components/music-metadata';
-import { ChartCard, EmptyState, SampleChip, Thumb } from '@/components/ui';
-import { MonthlySummaryReadout } from '@/components/month-summary-popup';
+import { EmptyState, SampleChip, Thumb } from '@/components/ui';
 import { SongListRow } from './main';
 
 
@@ -79,18 +78,6 @@ export function AlbumScreen({vm,c}:{vm:VM;c:Ctx}) {
         <MusicMetadata items={album.metadata}/>
       </div>
     </div>
-    {album.metrics.length>0 && <div className="artist-summary-metrics">
-      {album.metrics.map((m:any,i:number)=><div key={m.label} className="stat-box">
-        <div className={`num metric-value${i===1?' metric-duration':''}`}>{m.value}</div>
-        <div className="t2 metric-label">{m.label}</div>
-      </div>)}
-    </div>}
-    {vm.ch?.alh && <section className="album-history-section" aria-label="Giờ nghe và lịch sử hạng album">
-      <div className="sec-side detail-chart-heading detail-chart-heading-readout-only">
-        <div className="side num pretty"><MonthlySummaryReadout value={vm.rd?.alh} c={c} months={vm.periodOptions?.alh} onMonthSelect={index => c.set(q => ({ sel: { ...q.sel, alh: index } }))}/></div>
-      </div>
-      <ChartCard>{vm.ch.alh}</ChartCard>
-    </section>}
     <div className="album-tracks" aria-label="Bài hát trong album">
     {error ? <div className="card pad t2" role="status">{error} <button type="button" className="discovery-action" onClick={()=>setAttempt(n=>n+1)}>Thử lại</button></div>
       : !current ? <div className="card pad t3" role="status">Đang tải danh sách đầy đủ…</div>
